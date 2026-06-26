@@ -59,6 +59,7 @@ const configItems = [
   { icon: Plug, label: "Conectores", path: "/conectores" },
   { icon: Building2, label: "Filiais", path: "/filiais" },
   { icon: Layers, label: "Setores", path: "/setores" },
+  { icon: MessageSquare, label: "WhatsApp", path: "/configuracoes/whatsapp" },
 ];
 
 // Flat list for route matching (includes all routes, even hidden ones)

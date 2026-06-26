@@ -9939,6 +9939,74 @@ Retorne um JSON com os campos:
       }),
   }),
 
+  whatsapp: router({
+    status: adminProcedure.query(async () => {
+      const BASE_URL = process.env.EVOLUTION_API_URL ?? "";
+      const API_KEY = process.env.EVOLUTION_API_KEY ?? "";
+      const INSTANCE = process.env.EVOLUTION_INSTANCE ?? "melo-preda";
+      if (!BASE_URL || !API_KEY) return { status: "not_configured" as const };
+      try {
+        const res = await fetch(`${BASE_URL}/instance/fetchInstances`, {
+          headers: { apikey: API_KEY },
+        });
+        if (!res.ok) return { status: "error" as const };
+        const data = await res.json() as any[];
+        const inst = data.find((i: any) => i.name === INSTANCE);
+        if (!inst) return { status: "disconnected" as const };
+        return {
+          status: inst.connectionStatus === "open" ? "connected" as const : "disconnected" as const,
+          phone: inst.ownerJid?.replace("@s.whatsapp.net", "") ?? null,
+          profileName: inst.profileName ?? null,
+        };
+      } catch {
+        return { status: "error" as const };
+      }
+    }),
+
+    qrcode: adminProcedure.query(async () => {
+      const BASE_URL = process.env.EVOLUTION_API_URL ?? "";
+      const API_KEY = process.env.EVOLUTION_API_KEY ?? "";
+      const INSTANCE = process.env.EVOLUTION_INSTANCE ?? "melo-preda";
+      if (!BASE_URL || !API_KEY) return { base64: null };
+      try {
+        const res = await fetch(`${BASE_URL}/instance/connect/${INSTANCE}`, {
+          headers: { apikey: API_KEY },
+        });
+        if (!res.ok) return { base64: null };
+        const data = await res.json() as any;
+        return { base64: (data.base64 as string) ?? null };
+      } catch {
+        return { base64: null };
+      }
+    }),
+
+    createInstance: adminProcedure.mutation(async () => {
+      const BASE_URL = process.env.EVOLUTION_API_URL ?? "";
+      const API_KEY = process.env.EVOLUTION_API_KEY ?? "";
+      const INSTANCE = process.env.EVOLUTION_INSTANCE ?? "melo-preda";
+      if (!BASE_URL || !API_KEY) throw new TRPCError({ code: "BAD_REQUEST", message: "Evolution API não configurada" });
+      const res = await fetch(`${BASE_URL}/instance/create`, {
+        method: "POST",
+        headers: { apikey: API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ instanceName: INSTANCE, qrcode: true, integration: "WHATSAPP-BAILEYS" }),
+      });
+      if (!res.ok && res.status !== 409) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao criar instância" });
+      return { ok: true };
+    }),
+
+    disconnect: adminProcedure.mutation(async () => {
+      const BASE_URL = process.env.EVOLUTION_API_URL ?? "";
+      const API_KEY = process.env.EVOLUTION_API_KEY ?? "";
+      const INSTANCE = process.env.EVOLUTION_INSTANCE ?? "melo-preda";
+      if (!BASE_URL || !API_KEY) throw new TRPCError({ code: "BAD_REQUEST", message: "Evolution API não configurada" });
+      await fetch(`${BASE_URL}/instance/logout/${INSTANCE}`, {
+        method: "DELETE",
+        headers: { apikey: API_KEY },
+      });
+      return { ok: true };
+    }),
+  }),
+
 });
 // ==================== PROCESSADOR DE FILA DE JOBS ====================
 async function processarFilaJobs(jobIds: number[]) {
