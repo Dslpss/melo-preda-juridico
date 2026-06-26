@@ -9991,6 +9991,14 @@ Retorne um JSON com os campos:
         body: JSON.stringify({ instanceName: INSTANCE, qrcode: true, integration: "WHATSAPP-BAILEYS" }),
       });
       if (!res.ok && res.status !== 409) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao criar instância" });
+      // Evolution API v2 não propaga WEBHOOK_GLOBAL_URL — setar por instância
+      const webhookUrl = process.env.EVOLUTION_WEBHOOK_URL
+        ?? `${process.env.OAUTH_SERVER_URL ?? "http://localhost:3000"}/api/whatsapp/webhook`;
+      await fetch(`${BASE_URL}/webhook/set/${INSTANCE}`, {
+        method: "POST",
+        headers: { apikey: API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ webhook: { url: webhookUrl, enabled: true, webhookByEvents: false, webhookBase64: false, events: ["MESSAGES_UPSERT"] } }),
+      }).catch(() => {});
       return { ok: true };
     }),
 

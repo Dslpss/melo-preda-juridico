@@ -6,6 +6,8 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: melo_preda
+    ports:
+      - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -31,16 +33,27 @@ services:
         condition: service_healthy
 
   evolution:
-    image: atendai/evolution-api:v2.2.3
+    image: evoapicloud/evolution-api:latest
     container_name: melo-preda-evolution
     restart: always
+    ports:
+      - "8080:8080"
     environment:
-      SERVER_URL: http://evolution:8080
-      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
-      DATABASE_ENABLED: "false"
+      SERVER_URL: http://localhost:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-melo-preda-dev-key}
+      # Database — usa o mesmo MySQL do projeto
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: mysql
+      DATABASE_CONNECTION_URI: "mysql://root:root@mysql:3306/evolution_api"
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_v2
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
       WEBSOCKET_ENABLED: "false"
       WEBHOOK_GLOBAL_ENABLED: "true"
-      WEBHOOK_GLOBAL_URL: http://app:3000/api/whatsapp/webhook
+      WEBHOOK_GLOBAL_URL: http://host.docker.internal:3000/api/whatsapp/webhook
       WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "false"
       WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
       WEBHOOK_EVENTS_MESSAGES_UPDATE: "false"
@@ -48,7 +61,8 @@ services:
       QRCODE_LIMIT: "30"
       LOG_LEVEL: "ERROR"
     depends_on:
-      - app
+      mysql:
+        condition: service_healthy
 
   nginx:
     image: nginx:alpine
