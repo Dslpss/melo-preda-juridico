@@ -58,6 +58,8 @@ export default function Setores() {
         await createMutation.mutateAsync(s);
       }
       toast.success("Setores padrão criados");
+    } catch {
+      toast.error("Erro ao criar setores padrão");
     } finally {
       setSeeding(false);
     }
@@ -123,37 +125,20 @@ export default function Setores() {
                 </div>
               </div>
             </CardHeader>
-            {s.descricao && (
-              <CardContent className="pt-0">
-                <p className="text-xs text-muted-foreground">{s.descricao}</p>
-                {Boolean(s.ativo) ? (
-                  <Button size="sm" variant="ghost" className="text-destructive mt-2 h-7 px-2 text-xs"
-                    onClick={() => deleteMutation.mutate({ id: s.id })}>
-                    Desativar
-                  </Button>
-                ) : (
-                  <Button size="sm" variant="ghost" className="mt-2 h-7 px-2 text-xs"
-                    onClick={() => updateMutation.mutate({ id: s.id, ativo: 1 })}>
-                    Reativar
-                  </Button>
-                )}
-              </CardContent>
-            )}
-            {!s.descricao && (
-              <CardContent className="pt-0">
-                {Boolean(s.ativo) ? (
-                  <Button size="sm" variant="ghost" className="text-destructive h-7 px-2 text-xs"
-                    onClick={() => deleteMutation.mutate({ id: s.id })}>
-                    Desativar
-                  </Button>
-                ) : (
-                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
-                    onClick={() => updateMutation.mutate({ id: s.id, ativo: 1 })}>
-                    Reativar
-                  </Button>
-                )}
-              </CardContent>
-            )}
+            <CardContent className="pt-0">
+              {s.descricao && <p className="text-xs text-muted-foreground mb-2">{s.descricao}</p>}
+              {Boolean(s.ativo) ? (
+                <Button size="sm" variant="ghost" className="text-destructive h-7 px-2 text-xs"
+                  onClick={() => deleteMutation.mutate({ id: s.id })}>
+                  Desativar
+                </Button>
+              ) : (
+                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
+                  onClick={() => updateMutation.mutate({ id: s.id, ativo: 1 })}>
+                  Reativar
+                </Button>
+              )}
+            </CardContent>
           </Card>
         ))}
         {setores.length === 0 && (
