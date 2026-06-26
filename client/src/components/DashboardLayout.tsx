@@ -29,7 +29,7 @@ import {
   Bell, Clock, AlertTriangle, DollarSign, FileText, CheckCircle, X, Trash2,
   Gavel, Calendar, Settings, ChevronDown, ChevronRight, Shield, Download,
   BookOpen, ShieldCheck, ListChecks,
-  FileBarChart, FolderOpen, BarChart3, Activity, Plug
+  FileBarChart, FolderOpen, BarChart3, Activity, Plug, Building2, Layers
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -56,6 +56,8 @@ const configItems = [
   { icon: BarChart3, label: "Painel Uploads", path: "/admin-uploads" },
   { icon: Activity, label: "Status Sistema", path: "/status" },
   { icon: Plug, label: "Conectores", path: "/conectores" },
+  { icon: Building2, label: "Filiais", path: "/filiais" },
+  { icon: Layers, label: "Setores", path: "/setores" },
 ];
 
 // Flat list for route matching (includes all routes, even hidden ones)

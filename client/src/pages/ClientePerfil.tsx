@@ -49,6 +49,26 @@ function formatDate(d: string | Date | null | undefined) {
   return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function FilialSelect({ value, onChange }: { value: number | null; onChange: (id: number | null) => void }) {
+  const { data: filiais = [] } = trpc.filiais.list.useQuery();
+  return (
+    <Select
+      value={value ? String(value) : "none"}
+      onValueChange={v => onChange(v === "none" ? null : Number(v))}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder="Selecionar filial..." />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="none">Não definida</SelectItem>
+        {(filiais as any[]).filter(f => Boolean(f.ativo)).map((f: any) => (
+          <SelectItem key={f.id} value={String(f.id)}>{f.nome}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function SectionHeader({ title, icon, count, children, defaultOpen = true }: {
   title: string; icon: React.ReactNode; count?: number; children: React.ReactNode; defaultOpen?: boolean;
 }) {
@@ -79,6 +99,14 @@ export default function ClientePerfil() {
   const [, setLocation] = useLocation();
   const clienteId = parseInt(params.id || "0");
   const { data: profile, isLoading, refetch } = trpc.clientes.getFullProfile.useQuery({ id: clienteId });
+  const { data: filiais = [] } = trpc.filiais.list.useQuery();
+
+  const preferenciaLabel: Record<string, string> = {
+    whatsapp: "WhatsApp (texto)",
+    audio: "WhatsApp (áudio)",
+    ligacao: "Ligação",
+    presencial: "Presencial",
+  };
   const deleteCliente = trpc.clientes.delete.useMutation({
     onSuccess: () => { toast.success("Cliente excluído"); setLocation("/clientes"); },
     onError: (e) => toast.error(e.message),
@@ -363,6 +391,16 @@ export default function ClientePerfil() {
             <InfoRow label="CEP" value={cliente.cep} icon={<MapPin className="h-3.5 w-3.5" />} />
             <InfoRow label="Telefone" value={cliente.telefone} icon={<Phone className="h-3.5 w-3.5" />} />
             <InfoRow label="E-mail" value={cliente.email} icon={<Mail className="h-3.5 w-3.5" />} />
+            <InfoRow
+              label="Preferência de Contato"
+              value={preferenciaLabel[(cliente as any).preferenciaContato ?? ""] ?? undefined}
+              icon={<Phone className="h-3 w-3" />}
+            />
+            <InfoRow
+              label="Filial / Polo"
+              value={(filiais as any[]).find((f: any) => f.id === (cliente as any).filialId)?.nome ?? undefined}
+              icon={<Building2 className="h-3 w-3" />}
+            />
           </div>
         </div>
         {/* Dados Financeiros do Contracheque */}
