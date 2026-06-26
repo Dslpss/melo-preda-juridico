@@ -669,8 +669,8 @@
           "autoincrement": false,
           "default": "'whatsapp'"
         },
-        "setorAtualId": {
-          "name": "setorAtualId",
+        "setorId": {
+          "name": "setorId",
           "type": "int",
           "primaryKey": false,
           "notNull": false,
@@ -1999,8 +1999,8 @@
           "notNull": false,
           "autoincrement": false
         },
-        "ativa": {
-          "name": "ativa",
+        "ativo": {
+          "name": "ativo",
           "type": "int",
           "primaryKey": false,
           "notNull": true,

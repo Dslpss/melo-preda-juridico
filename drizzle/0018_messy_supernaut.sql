@@ -6,7 +6,7 @@ CREATE TABLE `filiais` (
 	`endereco` text,
 	`telefone` varchar(20),
 	`responsavelNome` varchar(255),
-	`ativa` int NOT NULL DEFAULT 1,
+	`ativo` int NOT NULL DEFAULT 1,
 	`createdAt` timestamp NOT NULL DEFAULT (now()),
 	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
 	CONSTRAINT `filiais_id` PRIMARY KEY(`id`)
@@ -25,4 +25,4 @@ CREATE TABLE `setores` (
 --> statement-breakpoint
 ALTER TABLE `clientes` ADD `filialId` int;--> statement-breakpoint
 ALTER TABLE `clientes` ADD `preferenciaContato` enum('whatsapp','ligacao','audio','presencial') DEFAULT 'whatsapp';--> statement-breakpoint
-ALTER TABLE `clientes` ADD `setorAtualId` int;
+ALTER TABLE `clientes` ADD `setorId` int;
