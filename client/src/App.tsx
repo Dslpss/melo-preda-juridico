@@ -25,6 +25,8 @@ import StatusSistema from "./pages/StatusSistema";
 import Conectores from "./pages/Conectores";
 import Filiais from "@/pages/Filiais";
 import Setores from "@/pages/Setores";
+import Atendimentos from "@/pages/Atendimentos";
+import Chat from "@/pages/Chat";
 
 function Router() {
   return (
@@ -57,6 +59,8 @@ function Router() {
             <Route path="/conectores" component={Conectores} />
             <Route path="/filiais" component={Filiais} />
             <Route path="/setores" component={Setores} />
+            <Route path="/atendimentos" component={Atendimentos} />
+            <Route path="/atendimento/:id" component={Chat} />
             <Route path="/404" component={NotFound} />
             <Route component={NotFound} />
           </Switch>
