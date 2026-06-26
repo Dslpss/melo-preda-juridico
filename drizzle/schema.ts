@@ -26,7 +26,7 @@ export const filiais = mysqlTable("filiais", {
   endereco: text("endereco"),
   telefone: varchar("telefone", { length: 20 }),
   responsavelNome: varchar("responsavelNome", { length: 255 }),
-  ativa: int("ativa").default(1).notNull(),
+  ativo: int("ativo").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -71,7 +71,7 @@ export const clientes = mysqlTable("clientes", {
   observacoes: text("observacoes"),
   filialId: int("filialId"),
   preferenciaContato: mysqlEnum("preferenciaContato", ["whatsapp", "ligacao", "audio", "presencial"]).default("whatsapp"),
-  setorAtualId: int("setorAtualId"),
+  setorId: int("setorId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
