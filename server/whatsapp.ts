@@ -29,6 +29,24 @@ export async function enviarMensagemTexto(
   });
 }
 
+export async function enviarDocumentoWhatsApp(
+  telefone: string,
+  mediaUrl: string,
+  fileName: string,
+  mimeType: string,
+  caption?: string
+): Promise<boolean> {
+  const number = telefone.replace(/\D/g, "");
+  return evolutionRequest(`/message/sendMedia/${INSTANCE}`, {
+    number,
+    mediatype: "document",
+    mimetype: mimeType || "application/octet-stream",
+    caption: caption ?? fileName,
+    media: mediaUrl,
+    fileName,
+  });
+}
+
 export function extrairTelefone(remoteJid: string): string {
   return remoteJid.replace("@s.whatsapp.net", "").replace("@g.us", "");
 }

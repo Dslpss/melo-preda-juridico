@@ -9871,6 +9871,74 @@ Retorne um JSON com os campos:
       }),
   }),
 
+  documentos: router({
+    listByCliente: protectedProcedure
+      .input(z.object({ clienteId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        return db
+          .select()
+          .from(documentos)
+          .where(eq(documentos.clienteId, input.clienteId))
+          .orderBy(desc(documentos.createdAt));
+      }),
+
+    enviarViaWhatsApp: protectedProcedure
+      .input(z.object({
+        documentoId: z.number(),
+        telefone: z.string(),
+        atendimentoId: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+        const docRows = await db
+          .select()
+          .from(documentos)
+          .where(eq(documentos.id, input.documentoId))
+          .limit(1);
+        const doc = docRows[0];
+        if (!doc) throw new TRPCError({ code: "NOT_FOUND", message: "Documento não encontrado" });
+        if (!doc.storageKey) throw new TRPCError({ code: "BAD_REQUEST", message: "Documento sem arquivo associado" });
+
+        let mediaUrl: string;
+        try {
+          const result = await storageGet(doc.storageKey);
+          mediaUrl = result.url;
+        } catch {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao obter URL do documento" });
+        }
+
+        const { enviarDocumentoWhatsApp } = await import("./whatsapp");
+        try {
+          await enviarDocumentoWhatsApp(
+            input.telefone,
+            mediaUrl,
+            doc.nomeArquivo ?? "documento",
+            doc.mimeType ?? "application/octet-stream",
+            doc.nomeArquivo ?? undefined
+          );
+        } catch {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao enviar documento via WhatsApp" });
+        }
+
+        // Record in mensagens if atendimentoId provided
+        if (input.atendimentoId) {
+          await db.insert(mensagens).values({
+            atendimentoId: input.atendimentoId,
+            origem: "atendente",
+            tipo: "documento",
+            conteudo: `Documento enviado: ${doc.nomeArquivo ?? "arquivo"}`,
+            lida: 1,
+          });
+        }
+
+        return { ok: true };
+      }),
+  }),
+
 });
 // ==================== PROCESSADOR DE FILA DE JOBS ====================
 async function processarFilaJobs(jobIds: number[]) {
