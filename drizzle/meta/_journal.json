@@ -134,6 +134,13 @@
       "when": 1782478631612,
       "tag": "0018_messy_supernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1782490616699,
+      "tag": "0019_pale_demogoblin",
+      "breakpoints": true
     }
   ]
 }

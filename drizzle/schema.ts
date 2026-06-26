@@ -851,3 +851,36 @@ export type Intimacao = typeof intimacoes.$inferSelect;
 export type InsertIntimacao = typeof intimacoes.$inferInsert;
 
 
+// ==================== ATENDIMENTOS (CONVERSAS WHATSAPP) ====================
+export const atendimentos = mysqlTable("atendimentos", {
+  id: int("id").autoincrement().primaryKey(),
+  telefoneCliente: varchar("telefoneCliente", { length: 30 }).notNull(),
+  nomeCliente: varchar("nomeCliente", { length: 255 }),
+  clienteId: int("clienteId"),
+  setorId: int("setorId"),
+  usuarioId: int("usuarioId"),
+  status: mysqlEnum("status", ["aberto", "em_atendimento", "encerrado"]).default("aberto").notNull(),
+  canal: varchar("canal", { length: 20 }).default("whatsapp").notNull(),
+  observacoes: text("observacoes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Atendimento = typeof atendimentos.$inferSelect;
+export type InsertAtendimento = typeof atendimentos.$inferInsert;
+
+// ==================== MENSAGENS (HISTÓRICO DE CONVERSA) ====================
+export const mensagens = mysqlTable("mensagens", {
+  id: int("id").autoincrement().primaryKey(),
+  atendimentoId: int("atendimentoId").notNull(),
+  origem: mysqlEnum("origem", ["cliente", "atendente", "sistema"]).notNull(),
+  tipo: mysqlEnum("tipo", ["texto", "audio", "imagem", "documento", "video"]).default("texto").notNull(),
+  conteudo: text("conteudo").notNull(),
+  evolutionMsgId: varchar("evolutionMsgId", { length: 100 }),
+  usuarioId: int("usuarioId"),
+  lida: int("lida").default(0).notNull(),
+  criadaEm: timestamp("criadaEm").defaultNow().notNull(),
+});
+
+export type Mensagem = typeof mensagens.$inferSelect;
+export type InsertMensagem = typeof mensagens.$inferInsert;
