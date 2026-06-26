@@ -103,6 +103,10 @@ export default function PrazosProcessuais() {
       toast.success(`Verificação concluída: ${data.notificacoesEnviadas} notificações, ${data.prazosVencidos} vencidos de ${data.totalVerificados} verificados`);
     },
   });
+  const enviarLembreteMutation = trpc.prazos.enviarLembreteManual.useMutation({
+    onSuccess: () => toast.success("Lembrete enviado via WhatsApp"),
+    onError: (e) => toast.error(e.message ?? "Erro ao enviar lembrete"),
+  });
 
   // Buscar processos do cliente selecionado
   const perfilCliente = trpc.clientes.getFullProfile.useQuery(
@@ -420,6 +424,22 @@ export default function PrazosProcessuais() {
                               </p>
                             </div>
                           </div>
+                          {prazo.tipo === "pericia" && (
+                            <div className="mt-2 flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs"
+                                disabled={enviarLembreteMutation.isPending}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  enviarLembreteMutation.mutate({ prazoId: prazo.id });
+                                }}
+                              >
+                                Lembrete WhatsApp
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       );
                     })
