@@ -6,8 +6,6 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: melo_preda
-    ports:
-      - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -31,8 +29,6 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-    ports:
-      - "3000:3000"
 
   nginx:
     image: nginx:alpine
