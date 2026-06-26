@@ -119,9 +119,21 @@ export default function Atendimentos() {
                     {a.nomeCliente ?? a.telefoneCliente}
                   </span>
                 </div>
-                <Badge variant={statusVariant[a.status] ?? "outline"}>
-                  {statusLabel[a.status] ?? a.status}
-                </Badge>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge variant={statusVariant[a.status] ?? "outline"}>
+                    {statusLabel[a.status] ?? a.status}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] shrink-0 ${
+                      a.clienteId
+                        ? "bg-green-100 text-green-800 border-green-200"
+                        : "bg-orange-100 text-orange-800 border-orange-200"
+                    }`}
+                  >
+                    {a.clienteId ? "Recorrente" : "Novo"}
+                  </Badge>
+                </div>
               </div>
 
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
