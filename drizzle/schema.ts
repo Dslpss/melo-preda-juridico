@@ -503,6 +503,9 @@ export const prazosProcessuais = mysqlTable("prazos_processuais", {
     "cancelado",              // Prazo cancelado
   ]).default("pendente").notNull(),
   notificacaoEnviada: int("notificacaoEnviada").default(0),
+  lembrete7dEnviado: int("lembrete7dEnviado").default(0).notNull(),
+  lembrete3dEnviado: int("lembrete3dEnviado").default(0).notNull(),
+  lembrete1dEnviado: int("lembrete1dEnviado").default(0).notNull(),
   observacoes: text("observacoesPrazo"),
   createdAt: timestamp("createdAtPrazo").defaultNow().notNull(),
   updatedAt: timestamp("updatedAtPrazo").defaultNow().onUpdateNow().notNull(),

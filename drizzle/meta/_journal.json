@@ -141,6 +141,13 @@
       "when": 1782490616699,
       "tag": "0019_pale_demogoblin",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1782493668636,
+      "tag": "0020_short_speed",
+      "breakpoints": true
     }
   ]
 }
