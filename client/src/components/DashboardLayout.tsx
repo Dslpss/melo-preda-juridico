@@ -29,7 +29,7 @@ import {
   Bell, Clock, AlertTriangle, DollarSign, FileText, CheckCircle, X, Trash2,
   Gavel, Calendar, Settings, ChevronDown, ChevronRight, Shield, Download,
   BookOpen, ShieldCheck, ListChecks,
-  FileBarChart, FolderOpen, BarChart3, Activity, Plug, Building2, Layers
+  FileBarChart, FolderOpen, BarChart3, Activity, Plug, Building2, Layers, MessageSquare
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -37,11 +37,12 @@ import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 
 // ==================== MENU STRUCTURE ====================
-// Fluxo simplificado: 6 itens principais + Configurações colapsável
+// Fluxo simplificado: 7 itens principais + Configurações colapsável
 const menuItems = [
   { icon: LayoutDashboard, label: "Painel", path: "/" },
   { icon: Upload, label: "Importar", path: "/upload" },
   { icon: Users, label: "Clientes", path: "/clientes" },
+  { icon: MessageSquare, label: "Atendimentos", path: "/atendimentos" },
   { icon: Gavel, label: "Petições", path: "/peticionamento" },
   { icon: Calendar, label: "Prazos", path: "/prazos" },
   { icon: FileBarChart, label: "Relatórios", path: "/relatorios" },
