@@ -17,7 +17,8 @@ import {
   anexosPeticao, userPermissions, convites, auditLog,
   publicacoes, monitoramentoConfig, peticaoVersoes, perfisAcesso,
   creditosConfig, creditosSaldo, creditosTransacoes, creditosResumoDiario,
-  conectoresApi, intimacoes
+  conectoresApi, intimacoes,
+  filiais, setores
 } from "../drizzle/schema";
 import { eq, like, desc, asc, and, sql, inArray } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -554,6 +555,9 @@ export const appRouter = router({
         telefone: z.string().optional(),
         email: z.string().optional(),
         observacoes: z.string().optional(),
+        filialId: z.number().nullable().optional(),
+        preferenciaContato: z.enum(["whatsapp", "ligacao", "audio", "presencial"]).optional(),
+        setorId: z.number().nullable().optional(),
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
@@ -9516,6 +9520,115 @@ Retorne um JSON com os campos:
 
       return { processados, total: input.events.length };
     }),
+  }),
+
+  // ==================== FILIAIS ====================
+  filiais: router({
+    list: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(filiais).orderBy(asc(filiais.nome));
+    }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return null;
+        const rows = await db.select().from(filiais).where(eq(filiais.id, input.id)).limit(1);
+        return rows[0] ?? null;
+      }),
+
+    create: adminProcedure
+      .input(z.object({
+        nome: z.string().min(1),
+        cidade: z.string().optional(),
+        estado: z.string().optional(),
+        endereco: z.string().optional(),
+        telefone: z.string().optional(),
+        responsavelNome: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.insert(filiais).values({ ...input, ativo: 1 });
+        return { ok: true };
+      }),
+
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        nome: z.string().min(1).optional(),
+        cidade: z.string().optional(),
+        estado: z.string().optional(),
+        endereco: z.string().optional(),
+        telefone: z.string().optional(),
+        responsavelNome: z.string().optional(),
+        ativo: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { id, ...data } = input;
+        await db.update(filiais).set(data).where(eq(filiais.id, id));
+        return { ok: true };
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.update(filiais).set({ ativo: 0 }).where(eq(filiais.id, input.id));
+        return { ok: true };
+      }),
+  }),
+
+  // ==================== SETORES ====================
+  setores: router({
+    list: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(setores).orderBy(asc(setores.nome));
+    }),
+
+    create: adminProcedure
+      .input(z.object({
+        nome: z.string().min(1),
+        descricao: z.string().optional(),
+        cor: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.insert(setores).values({ ...input, ativo: 1 });
+        return { ok: true };
+      }),
+
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        nome: z.string().min(1).optional(),
+        descricao: z.string().optional(),
+        cor: z.string().optional(),
+        ativo: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { id, ...data } = input;
+        await db.update(setores).set(data).where(eq(setores.id, id));
+        return { ok: true };
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.update(setores).set({ ativo: 0 }).where(eq(setores.id, input.id));
+        return { ok: true };
+      }),
   }),
 
 });
