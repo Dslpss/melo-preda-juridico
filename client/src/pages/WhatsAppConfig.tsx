@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Wifi, WifiOff, RefreshCw, LogOut, Smartphone } from "lucide-react";
@@ -7,25 +6,19 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function WhatsAppConfig() {
-  const [polling, setPolling] = useState(false);
-
   const { data: statusData, refetch: refetchStatus, isLoading: statusLoading } =
     trpc.whatsapp.status.useQuery(undefined, {
-      refetchInterval: polling ? 4000 : false,
+      refetchInterval: 4000,
     });
 
   const { data: qrData, refetch: refetchQr } =
     trpc.whatsapp.qrcode.useQuery(undefined, {
       enabled: statusData?.status === "disconnected",
-      refetchInterval: polling ? 8000 : false,
+      refetchInterval: statusData?.status === "disconnected" ? 8000 : false,
     });
 
-  useEffect(() => {
-    if (statusData?.status === "connected") setPolling(false);
-  }, [statusData?.status]);
-
   const createMutation = trpc.whatsapp.createInstance.useMutation({
-    onSuccess: () => { setPolling(true); refetchStatus(); refetchQr(); },
+    onSuccess: () => { refetchStatus(); refetchQr(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -78,7 +71,7 @@ export default function WhatsAppConfig() {
             {!connected && !notConfigured && (
               <Button
                 size="sm"
-                onClick={() => { createMutation.mutate(); setPolling(true); }}
+                onClick={() => createMutation.mutate()}
                 disabled={createMutation.isPending}
               >
                 {createMutation.isPending ? "Aguarde..." : "Gerar QR Code"}
