@@ -17,6 +17,37 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+// ==================== FILIAIS (POLOS FÍSICOS) ====================
+export const filiais = mysqlTable("filiais", {
+  id: int("id").autoincrement().primaryKey(),
+  nome: varchar("nome", { length: 255 }).notNull(),
+  cidade: varchar("cidade", { length: 100 }),
+  estado: varchar("estado", { length: 50 }),
+  endereco: text("endereco"),
+  telefone: varchar("telefone", { length: 20 }),
+  responsavelNome: varchar("responsavelNome", { length: 255 }),
+  ativa: int("ativa").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Filial = typeof filiais.$inferSelect;
+export type InsertFilial = typeof filiais.$inferInsert;
+
+// ==================== SETORES (DEPARTAMENTOS INTERNOS) ====================
+export const setores = mysqlTable("setores", {
+  id: int("id").autoincrement().primaryKey(),
+  nome: varchar("nome", { length: 255 }).notNull(),
+  descricao: text("descricao"),
+  cor: varchar("cor", { length: 7 }).default("#6366f1"),
+  ativo: int("ativo").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Setor = typeof setores.$inferSelect;
+export type InsertSetor = typeof setores.$inferInsert;
+
 // ==================== CLIENTES (CPF como identificador único) ====================
 export const clientes = mysqlTable("clientes", {
   id: int("id").autoincrement().primaryKey(),
@@ -38,6 +69,9 @@ export const clientes = mysqlTable("clientes", {
   estadoCivil: varchar("estadoCivil", { length: 30 }),
   nacionalidade: varchar("nacionalidade", { length: 50 }),
   observacoes: text("observacoes"),
+  filialId: int("filialId"),
+  preferenciaContato: mysqlEnum("preferenciaContato", ["whatsapp", "ligacao", "audio", "presencial"]).default("whatsapp"),
+  setorAtualId: int("setorAtualId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
