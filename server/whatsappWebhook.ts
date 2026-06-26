@@ -23,7 +23,10 @@ whatsappWebhookRouter.post("/webhook", async (req: Request, res: Response) => {
   if (!data?.key || data.key.fromMe) return;
 
   const db = await getDb();
-  if (!db) return;
+  if (!db) {
+    console.error("[WhatsApp webhook] Database not available, message dropped");
+    return;
+  }
 
   const telefone = extrairTelefone(data.key.remoteJid);
   const conteudo = extrairTextoMensagem(data);
@@ -66,7 +69,7 @@ whatsappWebhookRouter.post("/webhook", async (req: Request, res: Response) => {
       status: "aberto",
       canal: "whatsapp",
     });
-    atendimentoId = Number((result as any).insertId);
+    atendimentoId = Number((result as { insertId: number }).insertId);
   }
 
   // Deduplicate by evolutionMsgId
