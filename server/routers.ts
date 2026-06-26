@@ -9773,7 +9773,11 @@ Retorne um JSON com os campos:
         if (!atRows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Atendimento não encontrado" });
 
         const { enviarMensagemTexto } = await import("./whatsapp");
-        await enviarMensagemTexto(atRows[0].telefoneCliente, input.texto);
+        try {
+          await enviarMensagemTexto(atRows[0].telefoneCliente, input.texto);
+        } catch (e) {
+          console.error("[mensagens.send] WhatsApp delivery failed:", e);
+        }
 
         await db.insert(mensagens).values({
           atendimentoId: input.atendimentoId,
