@@ -4855,6 +4855,53 @@ Retorne JSON: { "movimentacoesFinanceiras": [ { "tipo": "...", "status": "...", 
 
         return { notificacoesEnviadas, prazosVencidos, totalVerificados: pendentes.length };
       }),
+
+    enviarLembreteManual: protectedProcedure
+      .input(z.object({ prazoId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+        const prazoRows = await db
+          .select()
+          .from(prazosProcessuais)
+          .where(eq(prazosProcessuais.id, input.prazoId))
+          .limit(1);
+        const prazo = prazoRows[0];
+        if (!prazo) throw new TRPCError({ code: "NOT_FOUND", message: "Prazo não encontrado" });
+
+        const clienteRows = await db
+          .select({ telefone: clientes.telefone, nomeCompleto: clientes.nomeCompleto })
+          .from(clientes)
+          .where(eq(clientes.id, prazo.clienteId))
+          .limit(1);
+        const cliente = clienteRows[0];
+        if (!cliente?.telefone) throw new TRPCError({ code: "BAD_REQUEST", message: "Cliente sem telefone cadastrado" });
+
+        const dataPericia = new Date(prazo.dataVencimento);
+        const dataFormatada = dataPericia.toLocaleDateString("pt-BR", {
+          weekday: "long",
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        });
+        const primeiroNome = cliente.nomeCompleto?.split(" ")[0] ?? null;
+        const saudacao = primeiroNome ? `Olá ${primeiroNome}! ` : "Olá! ";
+        const mensagem =
+          saudacao +
+          `Lembrando que sua perícia está marcada para o dia ${dataFormatada}. ` +
+          `Não esqueça de comparecer com seus documentos de identificação e laudos médicos. ` +
+          `Qualquer dúvida, estamos à disposição.`;
+
+        const { enviarMensagemTexto } = await import("./whatsapp");
+        try {
+          await enviarMensagemTexto(cliente.telefone, mensagem);
+        } catch {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao enviar mensagem WhatsApp" });
+        }
+
+        return { ok: true };
+      }),
    }),
 
   // ==================== AGENTE IA JURÍDICO EXPERT ====================
@@ -9737,6 +9784,18 @@ Retorne um JSON com os campos:
         await db
           .update(atendimentos)
           .set({ clienteId: input.clienteId })
+          .where(eq(atendimentos.id, input.id));
+        return { ok: true };
+      }),
+
+    updateObservacoes: protectedProcedure
+      .input(z.object({ id: z.number(), observacoes: z.string() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        await db
+          .update(atendimentos)
+          .set({ observacoes: input.observacoes })
           .where(eq(atendimentos.id, input.id));
         return { ok: true };
       }),

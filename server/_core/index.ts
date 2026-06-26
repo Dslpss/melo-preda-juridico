@@ -10,6 +10,7 @@ import { serveStatic, setupVite } from "./vite";
 import { apiRouter } from "../apiRest";
 import { uploadChunkedRouter } from "../uploadChunked";
 import { whatsappWebhookRouter } from "../whatsappWebhook";
+import { verificarEEnviarLembretes } from "../lembretesService";
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import * as db from "../db";
 import { sdk } from "./sdk";
@@ -102,6 +103,12 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });
+
+  // Scheduler de lembretes de perícia — executa ao iniciar e a cada hora
+  verificarEEnviarLembretes().catch(console.error);
+  setInterval(() => {
+    verificarEEnviarLembretes().catch(console.error);
+  }, 60 * 60 * 1000);
 }
 
 startServer().catch(console.error);
