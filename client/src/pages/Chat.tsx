@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Send, UserCheck, XCircle, Phone } from "lucide-react";
+import { ArrowLeft, Send, UserCheck, XCircle, Phone, FileText } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -72,6 +72,11 @@ export default function Chat() {
     { enabled: clienteId !== null }
   );
 
+  const { data: clienteDocumentos = [] } = trpc.documentos.listByCliente.useQuery(
+    { clienteId: clienteId! },
+    { enabled: clienteId !== null }
+  );
+
   const sendMutation = trpc.mensagens.send.useMutation({
     onSuccess: () => {
       setTexto("");
@@ -107,6 +112,11 @@ export default function Chat() {
       utils.atendimentos.getById.invalidate({ id: atendimentoId });
     },
     onError: () => toast.error("Erro ao salvar observações"),
+  });
+
+  const enviarDocMutation = trpc.documentos.enviarViaWhatsApp.useMutation({
+    onSuccess: () => toast.success("Documento enviado via WhatsApp"),
+    onError: (e) => toast.error(e.message ?? "Erro ao enviar documento"),
   });
 
   // Auto-scroll on new messages
@@ -315,6 +325,38 @@ export default function Chat() {
                     </p>
                   </div>
                 ))}
+            </div>
+          )}
+
+          {/* Documents */}
+          {clienteDocumentos.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Documentos</p>
+              <div className="space-y-1">
+                {(clienteDocumentos as any[]).slice(0, 5).map((doc: any) => (
+                  <div key={doc.id} className="flex items-center justify-between gap-1 border rounded px-2 py-1.5 bg-background">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <FileText className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <span className="text-xs truncate">{doc.nomeArquivo ?? "arquivo"}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-1.5 text-[10px] shrink-0"
+                      disabled={enviarDocMutation.isPending}
+                      onClick={() =>
+                        enviarDocMutation.mutate({
+                          documentoId: doc.id,
+                          telefone: atendimento?.telefoneCliente ?? "",
+                          atendimentoId,
+                        })
+                      }
+                    >
+                      Enviar
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
