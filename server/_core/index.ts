@@ -9,6 +9,10 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { apiRouter } from "../apiRest";
 import { uploadChunkedRouter } from "../uploadChunked";
+import { whatsappWebhookRouter } from "../whatsappWebhook";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import * as db from "../db";
+import { sdk } from "./sdk";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -37,10 +41,42 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "100mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+
+  // Rota de Login de Desenvolvedor (Bypass) com suporte a múltiplos perfis de teste
+  app.get("/api/dev-login", async (req, res) => {
+    const userId = (req.query.id as string) || "123";
+    const openId = `dev-user-${userId}`;
+    const name = (req.query.name as string) || `Desenvolvedor ${userId}`;
+    const email = (req.query.email as string) || `dev-${userId}@exemplo.com`;
+    const role = (req.query.role === "admin" || req.query.role === "user") ? req.query.role : "admin";
+
+    try {
+      await db.upsertUser({
+        openId,
+        name,
+        email,
+        role,
+        profileCompleted: 1
+      });
+      const token = await sdk.createSessionToken(openId, { name });
+      res.cookie(COOKIE_NAME, token, { 
+        maxAge: ONE_YEAR_MS, 
+        httpOnly: true,
+        path: '/'
+      });
+      res.redirect("/");
+    } catch (error) {
+      console.error("[DevLogin] Failed:", error);
+      res.status(500).send("Erro no login de desenvolvedor");
+    }
+  });
+
   // API REST pública do Agente IA
   app.use('/api/v1', apiRouter);
   // Upload chunked (multipart, sem limite de tamanho)
   app.use('/api/upload', uploadChunkedRouter);
+  // WhatsApp webhook (Evolution API)
+  app.use('/api/whatsapp', whatsappWebhookRouter);
   // tRPC API
   app.use(
     "/api/trpc",
