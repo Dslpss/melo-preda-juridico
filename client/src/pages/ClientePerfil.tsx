@@ -150,6 +150,40 @@ export default function ClientePerfil() {
   const [editStatus, setEditStatus] = useState('');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
+  // ===== EDIÇÃO DE DADOS DO CLIENTE =====
+  const [isEditingCliente, setIsEditingCliente] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+
+  const updateCliente = trpc.clientes.update.useMutation({
+    onSuccess: () => {
+      toast.success("Dados do cliente atualizados");
+      setIsEditingCliente(false);
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleOpenEditCliente = () => {
+    setEditForm({
+      nomeCompleto: cliente.nomeCompleto ?? "",
+      cpfCnpj: cliente.cpfCnpj?.startsWith('PEND_') ? "" : (cliente.cpfCnpj ?? ""),
+      rg: cliente.rg ?? "",
+      profissao: cliente.profissao ?? "",
+      cargo: cliente.cargo ?? "",
+      orgaoEmpregador: cliente.orgaoEmpregador ?? "",
+      endereco: cliente.endereco ?? "",
+      cidade: cliente.cidade ?? "",
+      estado: cliente.estado ?? "",
+      cep: cliente.cep ?? "",
+      telefone: cliente.telefone ?? "",
+      email: cliente.email ?? "",
+      observacoes: (cliente as any).observacoes ?? "",
+      preferenciaContato: (cliente as any).preferenciaContato ?? "whatsapp",
+      filialId: (cliente as any).filialId ?? null,
+    });
+    setIsEditingCliente(true);
+  };
+
   // ===== PETIÇÃO INLINE: Estado para gerar petição direto na pasta =====
   const [showPeticaoWizard, setShowPeticaoWizard] = useState(false);
   const [peticaoTipo, setPeticaoTipo] = useState('');
@@ -372,6 +406,111 @@ export default function ClientePerfil() {
 
       {/* ==================== 1. DADOS PESSOAIS ==================== */}
       <SectionHeader title="Dados Pessoais" icon={<User className="h-4 w-4 text-blue-600" />} defaultOpen={true}>
+        <div className="flex justify-end mb-3">
+          <Button size="sm" variant="outline" onClick={handleOpenEditCliente}>
+            <Edit className="h-4 w-4 mr-1" /> Editar Dados
+          </Button>
+        </div>
+
+        {/* Dialog de edição do cliente */}
+        <Dialog open={isEditingCliente} onOpenChange={setIsEditingCliente}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Editar Dados do Cliente</DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+              <div className="space-y-1">
+                <Label>Nome Completo</Label>
+                <Input value={editForm.nomeCompleto ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, nomeCompleto: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>CPF/CNPJ</Label>
+                <Input value={editForm.cpfCnpj ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, cpfCnpj: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>RG</Label>
+                <Input value={editForm.rg ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, rg: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Profissão</Label>
+                <Input value={editForm.profissao ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, profissao: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Cargo</Label>
+                <Input value={editForm.cargo ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, cargo: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Órgão/Empregador</Label>
+                <Input value={editForm.orgaoEmpregador ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, orgaoEmpregador: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Telefone</Label>
+                <Input value={editForm.telefone ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, telefone: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>E-mail</Label>
+                <Input type="email" value={editForm.email ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, email: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Endereço</Label>
+                <Input value={editForm.endereco ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, endereco: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Cidade</Label>
+                <Input value={editForm.cidade ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, cidade: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Estado (UF)</Label>
+                <Input value={editForm.estado ?? ""} maxLength={2} onChange={e => setEditForm((p: any) => ({ ...p, estado: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>CEP</Label>
+                <Input value={editForm.cep ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, cep: e.target.value }))} />
+              </div>
+              <div className="md:col-span-2 space-y-1">
+                <Label>Observações</Label>
+                <Textarea rows={3} value={editForm.observacoes ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, observacoes: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Preferência de Contato</Label>
+                <Select
+                  value={editForm.preferenciaContato ?? "whatsapp"}
+                  onValueChange={v => setEditForm((p: any) => ({ ...p, preferenciaContato: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="whatsapp">WhatsApp (texto)</SelectItem>
+                    <SelectItem value="audio">WhatsApp (áudio)</SelectItem>
+                    <SelectItem value="ligacao">Ligação telefônica</SelectItem>
+                    <SelectItem value="presencial">Presencial</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Filial / Polo</Label>
+                <FilialSelect
+                  value={editForm.filialId ?? null}
+                  onChange={id => setEditForm((p: any) => ({ ...p, filialId: id }))}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">Cancelar</Button>
+              </DialogClose>
+              <Button
+                onClick={() => updateCliente.mutate({ id: clienteId, ...editForm })}
+                disabled={updateCliente.isPending}
+              >
+                {updateCliente.isPending ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+                Salvar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
           <div>
             <InfoRow label="Nome Completo" value={cliente.nomeCompleto} icon={<User className="h-3.5 w-3.5" />} />
