@@ -30,6 +30,26 @@ services:
       mysql:
         condition: service_healthy
 
+  evolution:
+    image: atendai/evolution-api:v2.2.3
+    container_name: melo-preda-evolution
+    restart: always
+    environment:
+      SERVER_URL: http://evolution:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      DATABASE_ENABLED: "false"
+      WEBSOCKET_ENABLED: "false"
+      WEBHOOK_GLOBAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_URL: http://app:3000/api/whatsapp/webhook
+      WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "false"
+      WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
+      WEBHOOK_EVENTS_MESSAGES_UPDATE: "false"
+      WEBHOOK_EVENTS_CONNECTION_UPDATE: "false"
+      QRCODE_LIMIT: "30"
+      LOG_LEVEL: "ERROR"
+    depends_on:
+      - app
+
   nginx:
     image: nginx:alpine
     container_name: melo-preda-nginx
