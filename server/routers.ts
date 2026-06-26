@@ -18,7 +18,8 @@ import {
   publicacoes, monitoramentoConfig, peticaoVersoes, perfisAcesso,
   creditosConfig, creditosSaldo, creditosTransacoes, creditosResumoDiario,
   conectoresApi, intimacoes,
-  filiais, setores
+  filiais, setores,
+  atendimentos, mensagens
 } from "../drizzle/schema";
 import { eq, like, desc, asc, and, sql, inArray } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -9627,6 +9628,182 @@ Retorne um JSON com os campos:
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
         await db.update(setores).set({ ativo: 0 }).where(eq(setores.id, input.id));
+        return { ok: true };
+      }),
+  }),
+
+  // ==================== ATENDIMENTOS (WHATSAPP) ====================
+  atendimentos: router({
+    list: protectedProcedure
+      .input(z.object({
+        status: z.enum(["aberto", "em_atendimento", "encerrado"]).optional(),
+        setorId: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const conditions = [];
+        if (input?.status) conditions.push(eq(atendimentos.status, input.status));
+        if (input?.setorId) conditions.push(eq(atendimentos.setorId, input.setorId));
+        return db
+          .select()
+          .from(atendimentos)
+          .where(conditions.length > 0 ? and(...conditions) : undefined)
+          .orderBy(desc(atendimentos.updatedAt));
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return null;
+        const rows = await db
+          .select()
+          .from(atendimentos)
+          .where(eq(atendimentos.id, input.id))
+          .limit(1);
+        return rows[0] ?? null;
+      }),
+
+    assign: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        usuarioId: z.number().optional(),
+        setorId: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        const { id, ...data } = input;
+        await db
+          .update(atendimentos)
+          .set({ ...data, status: "em_atendimento" })
+          .where(eq(atendimentos.id, id));
+        return { ok: true };
+      }),
+
+    transfer: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        setorId: z.number(),
+        observacoes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        const { id, observacoes, setorId } = input;
+        await db
+          .update(atendimentos)
+          .set({ setorId, usuarioId: null, status: "aberto" })
+          .where(eq(atendimentos.id, id));
+        if (observacoes) {
+          await db.insert(mensagens).values({
+            atendimentoId: id,
+            origem: "sistema",
+            tipo: "texto",
+            conteudo: `Atendimento transferido. ${observacoes}`,
+            lida: 1,
+          });
+        }
+        return { ok: true };
+      }),
+
+    close: protectedProcedure
+      .input(z.object({ id: z.number(), observacoes: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        await db
+          .update(atendimentos)
+          .set({ status: "encerrado" })
+          .where(eq(atendimentos.id, input.id));
+        if (input.observacoes) {
+          await db.insert(mensagens).values({
+            atendimentoId: input.id,
+            origem: "sistema",
+            tipo: "texto",
+            conteudo: `Atendimento encerrado. ${input.observacoes}`,
+            lida: 1,
+          });
+        }
+        return { ok: true };
+      }),
+
+    linkCliente: protectedProcedure
+      .input(z.object({ id: z.number(), clienteId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        await db
+          .update(atendimentos)
+          .set({ clienteId: input.clienteId })
+          .where(eq(atendimentos.id, input.id));
+        return { ok: true };
+      }),
+  }),
+
+  // ==================== MENSAGENS ====================
+  mensagens: router({
+    listByAtendimento: protectedProcedure
+      .input(z.object({ atendimentoId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        return db
+          .select()
+          .from(mensagens)
+          .where(eq(mensagens.atendimentoId, input.atendimentoId))
+          .orderBy(asc(mensagens.criadaEm));
+      }),
+
+    send: protectedProcedure
+      .input(z.object({
+        atendimentoId: z.number(),
+        texto: z.string().min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+        const atRows = await db
+          .select()
+          .from(atendimentos)
+          .where(eq(atendimentos.id, input.atendimentoId))
+          .limit(1);
+        if (!atRows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Atendimento não encontrado" });
+
+        const { enviarMensagemTexto } = await import("./whatsapp");
+        await enviarMensagemTexto(atRows[0].telefoneCliente, input.texto);
+
+        await db.insert(mensagens).values({
+          atendimentoId: input.atendimentoId,
+          origem: "atendente",
+          tipo: "texto",
+          conteudo: input.texto,
+          usuarioId: null,
+          lida: 1,
+        });
+
+        await db
+          .update(atendimentos)
+          .set({ status: "em_atendimento" })
+          .where(eq(atendimentos.id, input.atendimentoId));
+
+        return { ok: true };
+      }),
+
+    markRead: protectedProcedure
+      .input(z.object({ atendimentoId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        await db
+          .update(mensagens)
+          .set({ lida: 1 })
+          .where(and(
+            eq(mensagens.atendimentoId, input.atendimentoId),
+            eq(mensagens.lida, 0)
+          ));
         return { ok: true };
       }),
   }),
