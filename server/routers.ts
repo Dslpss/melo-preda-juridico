@@ -9550,7 +9550,7 @@ Retorne um JSON com os campos:
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
         await db.insert(filiais).values({ ...input, ativo: 1 });
         return { ok: true };
       }),
@@ -9568,7 +9568,7 @@ Retorne um JSON com os campos:
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
         const { id, ...data } = input;
         await db.update(filiais).set(data).where(eq(filiais.id, id));
         return { ok: true };
@@ -9578,7 +9578,7 @@ Retorne um JSON com os campos:
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
         await db.update(filiais).set({ ativo: 0 }).where(eq(filiais.id, input.id));
         return { ok: true };
       }),
@@ -9600,7 +9600,7 @@ Retorne um JSON com os campos:
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
         await db.insert(setores).values({ ...input, ativo: 1 });
         return { ok: true };
       }),
@@ -9615,7 +9615,7 @@ Retorne um JSON com os campos:
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
         const { id, ...data } = input;
         await db.update(setores).set(data).where(eq(setores.id, id));
         return { ok: true };
@@ -9625,7 +9625,7 @@ Retorne um JSON com os campos:
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
         await db.update(setores).set({ ativo: 0 }).where(eq(setores.id, input.id));
         return { ok: true };
       }),
