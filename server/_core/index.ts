@@ -1,7 +1,6 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
-import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -12,27 +11,9 @@ import { uploadChunkedRouter } from "../uploadChunked";
 import { whatsappWebhookRouter } from "../whatsappWebhook";
 import { verificarEEnviarLembretes } from "../lembretesService";
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { getSessionCookieOptions } from "./cookies";
 import * as db from "../db";
 import { sdk } from "./sdk";
-
-function isPortAvailable(port: number): Promise<boolean> {
-  return new Promise(resolve => {
-    const server = net.createServer();
-    server.listen(port, () => {
-      server.close(() => resolve(true));
-    });
-    server.on("error", () => resolve(false));
-  });
-}
-
-async function findAvailablePort(startPort: number = 3000): Promise<number> {
-  for (let port = startPort; port < startPort + 20; port++) {
-    if (await isPortAvailable(port)) {
-      return port;
-    }
-  }
-  throw new Error(`No available port found starting from ${startPort}`);
-}
 
 async function startServer() {
   const app = express();
@@ -43,8 +24,20 @@ async function startServer() {
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
 
-  // Rota de Login de Desenvolvedor (Bypass) com suporte a múltiplos perfis de teste
+  // Lista usuários do banco pra tela de dev login
+  app.get("/api/dev-users", async (req, res) => {
+    if (process.env.NODE_ENV !== "development") return res.status(404).send("Not found");
+    try {
+      const rows = await db.listUsers();
+      res.json(rows);
+    } catch { res.json([]); }
+  });
+
+  // Rota de Login de Desenvolvedor (Bypass) — apenas em desenvolvimento
   app.get("/api/dev-login", async (req, res) => {
+    if (process.env.NODE_ENV !== "development") {
+      return res.status(404).send("Not found");
+    }
     const userId = (req.query.id as string) || "123";
     const openId = `dev-user-${userId}`;
     const name = (req.query.name as string) || `Desenvolvedor ${userId}`;
@@ -60,10 +53,9 @@ async function startServer() {
         profileCompleted: 1
       });
       const token = await sdk.createSessionToken(openId, { name });
-      res.cookie(COOKIE_NAME, token, { 
-        maxAge: ONE_YEAR_MS, 
-        httpOnly: true,
-        path: '/'
+      res.cookie(COOKIE_NAME, token, {
+        ...getSessionCookieOptions(req),
+        maxAge: ONE_YEAR_MS,
       });
       res.redirect("/");
     } catch (error) {
@@ -93,13 +85,7 @@ async function startServer() {
     serveStatic(app);
   }
 
-  const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
-
-  if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
-  }
-
+  const port = parseInt(process.env.PORT || "3000");
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });

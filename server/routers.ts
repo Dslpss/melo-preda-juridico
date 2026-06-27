@@ -96,17 +96,10 @@ async function buildClientFolder(clienteId: number, nome: string, cpf: string) {
   const financeiro = await db.select().from(dadosFinanceiros).where(eq(dadosFinanceiros.clienteId, clienteId)).orderBy(desc(dadosFinanceiros.updatedAt));
   const emprestimos = await db.select().from(emprestimosConsignados).where(eq(emprestimosConsignados.clienteId, clienteId));
   const docs = await db.select().from(documentos).where(eq(documentos.clienteId, clienteId)).orderBy(desc(documentos.createdAt));
-  const conhecs = await db.select().from(conhecimentos).where(eq(conhecimentos.processoOrigemId, sql`ANY(SELECT id FROM processos WHERE clienteId = ${clienteId})`)).catch(() => [] as any[]);
-
-  // Fetch knowledge linked to this client's processes
   const procIds = procs.map(p => p.id);
-  let conhecimentosCliente: any[] = [];
-  if (procIds.length > 0) {
-    for (const pid of procIds) {
-      const kn = await db.select().from(conhecimentos).where(eq(conhecimentos.processoOrigemId, pid));
-      conhecimentosCliente.push(...kn);
-    }
-  }
+  const conhecimentosCliente = procIds.length > 0
+    ? await db.select().from(conhecimentos).where(inArray(conhecimentos.processoOrigemId, procIds))
+    : [];
 
   const processosDetalhados = await Promise.all(procs.map(async (p) => {
     const estrats = await db.select().from(estrategias).where(eq(estrategias.processoId, p.id));
@@ -4181,20 +4174,68 @@ Retorne JSON: { "movimentacoesFinanceiras": [ { "tipo": "...", "status": "...", 
       const allUsers = await db.select().from(users).orderBy(desc(users.lastSignedIn));
       const profiles = await db.select().from(userProfiles);
       const perms = await db.select().from(userPermissions);
+      const allSetores = await db.select().from(setores);
+      const allFiliais = await db.select().from(filiais);
       return allUsers.map(u => {
         const profile = profiles.find(p => p.userId === u.id);
         const userPerms = perms.filter(p => p.userId === u.id);
+        const setor = allSetores.find(s => s.id === profile?.setorId);
+        const filial = allFiliais.find(f => f.id === profile?.filialId);
         return {
           ...u,
           cpf: profile?.cpf || null,
           celular: profile?.celular || null,
           cargo: profile?.cargo || null,
           oab: profile?.oab || null,
+          setorId: profile?.setorId || null,
+          setorNome: setor?.nome || null,
+          filialId: profile?.filialId || null,
+          filialNome: filial?.nome || null,
           ativo: profile?.ativo ?? 1,
           permissoes: userPerms,
         };
       });
     }),
+
+    criarFuncionario: adminProcedure
+      .input(z.object({
+        nome: z.string().min(2),
+        email: z.string().email(),
+        cargo: z.string().optional(),
+        setorId: z.number().nullable().optional(),
+        filialId: z.number().nullable().optional(),
+        role: z.enum(['user', 'admin']).default('user'),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB indisponível' });
+        const [existing] = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
+        if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'Já existe um usuário com este email' });
+        const openId = `pending-${input.email}`;
+        await db.insert(users).values({
+          openId,
+          name: input.nome,
+          email: input.email,
+          role: input.role,
+          profileCompleted: 1,
+          lastSignedIn: new Date(),
+        });
+        const [newUser] = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+        if (newUser && (input.cargo || input.setorId || input.filialId)) {
+          await db.insert(userProfiles).values({
+            userId: newUser.id,
+            cargo: input.cargo || null,
+            setorId: input.setorId ?? null,
+            filialId: input.filialId ?? null,
+            ativo: 1,
+          });
+        }
+        await db.insert(auditLog).values({
+          userId: ctx.user.id, acao: 'criar_funcionario', modulo: 'acessos',
+          detalhes: JSON.stringify({ email: input.email, nome: input.nome }),
+        });
+        return { success: true };
+      }),
 
     atualizarPerfil: adminProcedure
       .input(z.object({
@@ -4205,6 +4246,8 @@ Retorne JSON: { "movimentacoesFinanceiras": [ { "tipo": "...", "status": "...", 
         oab: z.string().optional(),
         role: z.enum(['user', 'admin']).optional(),
         ativo: z.number().optional(),
+        setorId: z.number().nullable().optional(),
+        filialId: z.number().nullable().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
@@ -4215,14 +4258,24 @@ Retorne JSON: { "movimentacoesFinanceiras": [ { "tipo": "...", "status": "...", 
         const [existing] = await db.select().from(userProfiles).where(eq(userProfiles.userId, input.userId)).limit(1);
         if (existing) {
           await db.update(userProfiles).set({
-            cpf: input.cpf ?? existing.cpf, celular: input.celular ?? existing.celular,
-            cargo: input.cargo ?? existing.cargo, oab: input.oab ?? existing.oab,
+            cpf: input.cpf ?? existing.cpf,
+            celular: input.celular ?? existing.celular,
+            cargo: input.cargo ?? existing.cargo,
+            oab: input.oab ?? existing.oab,
             ativo: input.ativo ?? existing.ativo,
+            setorId: input.setorId !== undefined ? input.setorId : existing.setorId,
+            filialId: input.filialId !== undefined ? input.filialId : existing.filialId,
           }).where(eq(userProfiles.id, existing.id));
         } else {
           await db.insert(userProfiles).values({
-            userId: input.userId, cpf: input.cpf || null, celular: input.celular || null,
-            cargo: input.cargo || null, oab: input.oab || null, ativo: input.ativo ?? 1,
+            userId: input.userId,
+            cpf: input.cpf || null,
+            celular: input.celular || null,
+            cargo: input.cargo || null,
+            oab: input.oab || null,
+            ativo: input.ativo ?? 1,
+            setorId: input.setorId ?? null,
+            filialId: input.filialId ?? null,
           });
         }
         await db.insert(auditLog).values({
@@ -9985,15 +10038,21 @@ Retorne um JSON com os campos:
       const API_KEY = process.env.EVOLUTION_API_KEY ?? "";
       const INSTANCE = process.env.EVOLUTION_INSTANCE ?? "melo-preda";
       if (!BASE_URL || !API_KEY) throw new TRPCError({ code: "BAD_REQUEST", message: "Evolution API não configurada" });
-      const res = await fetch(`${BASE_URL}/instance/create`, {
-        method: "POST",
-        headers: { apikey: API_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify({ instanceName: INSTANCE, qrcode: true, integration: "WHATSAPP-BAILEYS" }),
-      });
-      if (!res.ok && res.status !== 409) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao criar instância" });
-      // Evolution API v2 não propaga WEBHOOK_GLOBAL_URL — setar por instância
+      // Verificar se instância já existe
+      const listRes = await fetch(`${BASE_URL}/instance/fetchInstances`, { headers: { apikey: API_KEY } });
+      const instances = listRes.ok ? (await listRes.json() as any[]) : [];
+      const exists = instances.some((i: any) => i.name === INSTANCE);
+      if (!exists) {
+        const res = await fetch(`${BASE_URL}/instance/create`, {
+          method: "POST",
+          headers: { apikey: API_KEY, "Content-Type": "application/json" },
+          body: JSON.stringify({ instanceName: INSTANCE, qrcode: true, integration: "WHATSAPP-BAILEYS" }),
+        });
+        if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao criar instância" });
+      }
+      // Evolution roda em Docker — precisa host.docker.internal, não localhost
       const webhookUrl = process.env.EVOLUTION_WEBHOOK_URL
-        ?? `${process.env.OAUTH_SERVER_URL ?? "http://localhost:3000"}/api/whatsapp/webhook`;
+        ?? `http://host.docker.internal:${process.env.PORT ?? "3000"}/api/whatsapp/webhook`;
       await fetch(`${BASE_URL}/webhook/set/${INSTANCE}`, {
         method: "POST",
         headers: { apikey: API_KEY, "Content-Type": "application/json" },

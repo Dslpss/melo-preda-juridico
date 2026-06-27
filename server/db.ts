@@ -35,18 +35,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     };
     const updateSet: Record<string, unknown> = {};
 
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
+    if (user.name !== undefined) { values.name = user.name ?? null; updateSet.name = values.name; }
+    if (user.email !== undefined) { values.email = user.email ?? null; updateSet.email = values.email; }
+    if (user.loginMethod !== undefined) { values.loginMethod = user.loginMethod ?? null; updateSet.loginMethod = values.loginMethod; }
 
     if (user.lastSignedIn !== undefined) {
       values.lastSignedIn = user.lastSignedIn;
@@ -87,6 +78,13 @@ export async function getUserByOpenId(openId: string) {
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
 
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function listUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: users.id, openId: users.openId, name: users.name, email: users.email, role: users.role })
+    .from(users).orderBy(users.id);
 }
 
 // TODO: add feature queries here as your schema grows.
