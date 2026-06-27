@@ -410,7 +410,9 @@ export const userProfiles = mysqlTable("user_profiles", {
   especialidade: varchar("especialidade", { length: 255 }),
   fotoUrl: text("fotoUrl"),
   bio: text("bio"),
-  permissoes: text("permissoes"), // JSON string com permissões específicas
+  permissoes: text("permissoes"),
+  setorId: int("setorId"),
+  filialId: int("filialId"),
   ativo: int("ativo").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

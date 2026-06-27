@@ -28,12 +28,16 @@ import Setores from "@/pages/Setores";
 import Atendimentos from "@/pages/Atendimentos";
 import Chat from "@/pages/Chat";
 import WhatsAppConfig from "@/pages/WhatsAppConfig";
+import DevLogin from "@/pages/DevLogin";
 
 function Router() {
   return (
     <Switch>
       {/* Rota pública - Formulário de Solicitação de Acesso */}
       <Route path="/solicitar-acesso" component={SolicitarAcesso} />
+
+      {/* Seletor de perfil em dev mode */}
+      <Route path="/dev-login" component={DevLogin} />
 
       {/* Rota de completar perfil - primeiro login */}
       <Route path="/completar-perfil" component={CompletarPerfil} />

@@ -14,6 +14,12 @@ export const getLoginUrl = (returnPath?: string) => {
     return `${currentOrigin}/api/cf-login`;
   }
 
+  // No localhost, mostrar seletor de perfil de desenvolvimento
+  const isLocalhost = currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1');
+  if (isLocalhost) {
+    return `${currentOrigin}/dev-login`;
+  }
+
   // No Manus (domínio autorizado), usar fluxo OAuth normal
   const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
   const appId = import.meta.env.VITE_APP_ID;
@@ -40,6 +46,12 @@ export const getGoogleLoginUrl = () => {
   
   if (isCloudflare) {
     return `${currentOrigin}/api/cf-login?provider=google`;
+  }
+
+  // No localhost, mostrar seletor de perfil de desenvolvimento
+  const isLocalhost = currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1');
+  if (isLocalhost) {
+    return `${currentOrigin}/dev-login`;
   }
 
   const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;

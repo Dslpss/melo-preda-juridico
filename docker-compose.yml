@@ -32,6 +32,13 @@ services:
       mysql:
         condition: service_healthy
 
+  redis:
+    image: redis:7-alpine
+    container_name: melo-preda-redis
+    restart: always
+    ports:
+      - "6379:6379"
+
   evolution:
     image: evoapicloud/evolution-api:latest
     container_name: melo-preda-evolution
@@ -47,10 +54,15 @@ services:
       DATABASE_CONNECTION_URI: "mysql://root:root@mysql:3306/evolution_api"
       DATABASE_CONNECTION_CLIENT_NAME: evolution_v2
       DATABASE_SAVE_DATA_INSTANCE: "true"
-      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
       DATABASE_SAVE_MESSAGE_UPDATE: "false"
       DATABASE_SAVE_DATA_CONTACTS: "false"
-      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      # Redis
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: "redis://redis:6379"
+      CACHE_REDIS_PREFIX_KEY: "evolution"
+      CACHE_LOCAL_ENABLED: "false"
       WEBSOCKET_ENABLED: "false"
       WEBHOOK_GLOBAL_ENABLED: "true"
       WEBHOOK_GLOBAL_URL: http://host.docker.internal:3000/api/whatsapp/webhook
@@ -59,10 +71,12 @@ services:
       WEBHOOK_EVENTS_MESSAGES_UPDATE: "false"
       WEBHOOK_EVENTS_CONNECTION_UPDATE: "false"
       QRCODE_LIMIT: "30"
-      LOG_LEVEL: "ERROR"
+      LOG_LEVEL: "WARN"
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_started
 
   nginx:
     image: nginx:alpine

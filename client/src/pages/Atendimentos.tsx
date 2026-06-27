@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { exibirTelefone } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -138,7 +139,7 @@ export default function Atendimentos() {
 
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Phone className="h-3 w-3" />
-                <span>{a.telefoneCliente}</span>
+                <span>{exibirTelefone(a.telefoneCliente)}</span>
               </div>
 
               <div className="flex items-center justify-between text-xs text-muted-foreground">

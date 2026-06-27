@@ -317,8 +317,17 @@ function TabSolicitacoes() {
 // ==================== ABA: USUÁRIOS ====================
 function TabUsuarios({ currentUserId }: { currentUserId?: number }) {
   const { data: usuarios, isLoading, refetch } = trpc.acessos.listarUsuarios.useQuery();
+  const { data: setores = [] } = trpc.setores.list.useQuery();
+  const { data: filiais = [] } = trpc.filiais.list.useQuery();
   const [editando, setEditando] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<any>({});
+  const [adicionando, setAdicionando] = useState(false);
+  const [novoForm, setNovoForm] = useState({ nome: "", email: "", cargo: "", setorId: "" as string, filialId: "" as string, role: "user" as "user" | "admin" });
+
+  const criarFuncionario = trpc.acessos.criarFuncionario.useMutation({
+    onSuccess: () => { toast.success("Funcionário adicionado"); refetch(); setAdicionando(false); setNovoForm({ nome: "", email: "", cargo: "", setorId: "", filialId: "", role: "user" }); },
+    onError: (err) => toast.error(err.message),
+  });
 
   const atualizarPerfil = trpc.acessos.atualizarPerfil.useMutation({
     onSuccess: () => { toast.success("Perfil atualizado"); refetch(); setEditando(null); },
@@ -342,10 +351,78 @@ function TabUsuarios({ currentUserId }: { currentUserId?: number }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{usuarios.length} usuário(s) no sistema</p>
-        <Button size="sm" variant="ghost" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4 mr-1" /> Atualizar
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={() => refetch()}>
+            <RefreshCw className="h-4 w-4 mr-1" /> Atualizar
+          </Button>
+          <Button size="sm" className="bg-amber-700 hover:bg-amber-800" onClick={() => setAdicionando(!adicionando)}>
+            <Plus className="h-4 w-4 mr-1" /> Adicionar Funcionário
+          </Button>
+        </div>
       </div>
+
+      {adicionando && (
+        <Card className="border-amber-200 bg-amber-50/40">
+          <CardContent className="pt-4 pb-4">
+            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+              <UserPlus className="h-4 w-4 text-amber-700" /> Novo Funcionário
+            </h4>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-muted-foreground">Nome *</label>
+                <Input className="h-8 text-sm" value={novoForm.nome} onChange={(e) => setNovoForm({ ...novoForm, nome: e.target.value })} placeholder="Nome completo" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Email *</label>
+                <Input className="h-8 text-sm" type="email" value={novoForm.email} onChange={(e) => setNovoForm({ ...novoForm, email: e.target.value })} placeholder="email@escritorio.com" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Cargo</label>
+                <Input className="h-8 text-sm" value={novoForm.cargo} onChange={(e) => setNovoForm({ ...novoForm, cargo: e.target.value })} placeholder="Ex: Atendente" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Perfil</label>
+                <select className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  value={novoForm.role} onChange={(e) => setNovoForm({ ...novoForm, role: e.target.value as "user" | "admin" })}>
+                  <option value="user">Funcionário</option>
+                  <option value="admin">Administrador</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Setor</label>
+                <select className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  value={novoForm.setorId} onChange={(e) => setNovoForm({ ...novoForm, setorId: e.target.value })}>
+                  <option value="">— Sem setor —</option>
+                  {(setores as any[]).map((s: any) => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Filial</label>
+                <select className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  value={novoForm.filialId} onChange={(e) => setNovoForm({ ...novoForm, filialId: e.target.value })}>
+                  <option value="">— Sem filial —</option>
+                  {(filiais as any[]).map((f: any) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <Button size="sm" className="bg-amber-700 hover:bg-amber-800"
+                disabled={!novoForm.nome || !novoForm.email || criarFuncionario.isPending}
+                onClick={() => criarFuncionario.mutate({
+                  nome: novoForm.nome,
+                  email: novoForm.email,
+                  cargo: novoForm.cargo || undefined,
+                  setorId: novoForm.setorId ? Number(novoForm.setorId) : null,
+                  filialId: novoForm.filialId ? Number(novoForm.filialId) : null,
+                  role: novoForm.role,
+                })}>
+                <CheckCircle className="h-3.5 w-3.5 mr-1" /> Salvar
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setAdicionando(false)}>Cancelar</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       <div className="grid gap-3">
         {usuarios.map((u: any) => (
           <Card key={u.id} className={u.ativo === 0 ? "opacity-60" : ""}>
@@ -366,6 +443,8 @@ function TabUsuarios({ currentUserId }: { currentUserId?: number }) {
                     <div>CPF: {u.cpf || "—"}</div>
                     <div>OAB: {u.oab || "—"}</div>
                     <div>Cargo: {u.cargo || "—"}</div>
+                    <div>Setor: {u.setorNome || "—"}</div>
+                    <div>Filial: {u.filialNome || "—"}</div>
                     <div>Último acesso: {u.lastSignedIn ? new Date(u.lastSignedIn).toLocaleDateString("pt-BR") : "—"}</div>
                   </div>
                   {u.permissoes && u.permissoes.length > 0 && (
@@ -399,6 +478,32 @@ function TabUsuarios({ currentUserId }: { currentUserId?: number }) {
                           <label className="text-xs text-muted-foreground">OAB</label>
                           <Input size={1} value={editForm.oab || ""} onChange={(e) => setEditForm({ ...editForm, oab: e.target.value })} placeholder="OAB" className="h-8 text-sm" />
                         </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Setor</label>
+                          <select
+                            value={editForm.setorId ?? ""}
+                            onChange={(e) => setEditForm({ ...editForm, setorId: e.target.value ? Number(e.target.value) : null })}
+                            className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                          >
+                            <option value="">— Sem setor —</option>
+                            {(setores as any[]).map((s: any) => (
+                              <option key={s.id} value={s.id}>{s.nome}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Filial</label>
+                          <select
+                            value={editForm.filialId ?? ""}
+                            onChange={(e) => setEditForm({ ...editForm, filialId: e.target.value ? Number(e.target.value) : null })}
+                            className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                          >
+                            <option value="">— Sem filial —</option>
+                            {(filiais as any[]).map((f: any) => (
+                              <option key={f.id} value={f.id}>{f.nome}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         <Button size="sm" className="bg-amber-700 hover:bg-amber-800"
@@ -412,7 +517,7 @@ function TabUsuarios({ currentUserId }: { currentUserId?: number }) {
                 </div>
                 <div className="flex flex-col gap-1.5 min-w-[120px]">
                   <Button size="sm" variant="outline" className="text-xs"
-                    onClick={() => { setEditando(editando === u.id ? null : u.id); setEditForm({ cpf: u.cpf || "", celular: u.celular || "", cargo: u.cargo || "", oab: u.oab || "" }); }}>
+                    onClick={() => { setEditando(editando === u.id ? null : u.id); setEditForm({ cpf: u.cpf || "", celular: u.celular || "", cargo: u.cargo || "", oab: u.oab || "", setorId: u.setorId ?? null, filialId: u.filialId ?? null }); }}>
                     <Edit className="h-3 w-3 mr-1" /> {editando === u.id ? "Fechar" : "Editar"}
                   </Button>
                   {u.role !== "admin" && (

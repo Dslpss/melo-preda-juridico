@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { exibirTelefone } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -182,7 +183,7 @@ export default function Chat() {
             {atendimento?.nomeCliente && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <Phone className="h-3 w-3" />
-                <span>{atendimento.telefoneCliente}</span>
+                <span>{exibirTelefone(atendimento.telefoneCliente)}</span>
               </div>
             )}
           </div>

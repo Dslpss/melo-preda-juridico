@@ -18,13 +18,18 @@ async function evolutionRequest(path: string, body: unknown): Promise<boolean> {
   }
 }
 
+function resolverNumber(telefone: string): string {
+  // lid:138959925587973 → JID completo 138959925587973@lid
+  if (telefone.startsWith("lid:")) return `${telefone.slice(4)}@lid`;
+  return telefone.replace(/\D/g, "");
+}
+
 export async function enviarMensagemTexto(
   telefone: string,
   texto: string
 ): Promise<boolean> {
-  const number = telefone.replace(/\D/g, "");
   return evolutionRequest(`/message/sendText/${INSTANCE}`, {
-    number,
+    number: resolverNumber(telefone),
     text: texto,
   });
 }
@@ -36,9 +41,8 @@ export async function enviarDocumentoWhatsApp(
   mimeType: string,
   caption?: string
 ): Promise<boolean> {
-  const number = telefone.replace(/\D/g, "");
   return evolutionRequest(`/message/sendMedia/${INSTANCE}`, {
-    number,
+    number: resolverNumber(telefone),
     mediatype: "document",
     mimetype: mimeType || "application/octet-stream",
     caption: caption ?? fileName,
