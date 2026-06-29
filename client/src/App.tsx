@@ -29,6 +29,8 @@ import Atendimentos from "@/pages/Atendimentos";
 import Chat from "@/pages/Chat";
 import WhatsAppConfig from "@/pages/WhatsAppConfig";
 import DevLogin from "@/pages/DevLogin";
+import AgenteIA from "@/pages/AgenteIA";
+import ConfiguracoesEscritorio from "@/pages/ConfiguracoesEscritorio";
 
 function Router() {
   return (
@@ -66,6 +68,8 @@ function Router() {
             <Route path="/setores" component={Setores} />
             <Route path="/atendimentos" component={Atendimentos} />
             <Route path="/atendimento/:id" component={Chat} />
+            <Route path="/agente" component={AgenteIA} />
+            <Route path="/configuracoes/escritorio" component={ConfiguracoesEscritorio} />
             <Route path="/configuracoes/whatsapp" component={WhatsAppConfig} />
             <Route path="/404" component={NotFound} />
             <Route component={NotFound} />

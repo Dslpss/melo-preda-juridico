@@ -218,14 +218,22 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
+const useGeminiNative = () => !!ENV.geminiApiKey;
+
+const resolveApiUrl = () => {
+  if (useGeminiNative()) {
+    return "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+  }
+  return ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
     ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
     : "https://forge.manus.im/v1/chat/completions";
+};
+
+const resolveApiKey = () => useGeminiNative() ? ENV.geminiApiKey : ENV.forgeApiKey;
 
 const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+  if (!resolveApiKey()) {
+    throw new Error("Nenhuma chave de IA configurada. Defina GEMINI_API_KEY ou OPENAI_API_KEY no .env");
   }
 };
 
@@ -306,8 +314,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   payload.max_tokens = 32768;
-  // Only add thinking when NOT using tools (thinking can conflict with tool_choice)
-  if (!tools || tools.length === 0) {
+  // thinking só funciona no proxy Forge — Gemini nativo não suporta
+  if (!useGeminiNative() && (!tools || tools.length === 0)) {
     payload.thinking = {
       budget_tokens: 1024
     };
@@ -328,13 +336,18 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${resolveApiKey()}`,
     },
     body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
+    if (response.status === 429) {
+      throw new Error(
+        "O assistente de IA está temporariamente indisponível. Por favor, entre em contato com o suporte técnico de TI."
+      );
+    }
     throw new Error(
       `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
     );

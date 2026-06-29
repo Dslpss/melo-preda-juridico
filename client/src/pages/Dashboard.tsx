@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useEscritorio } from "@/hooks/useEscritorio";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +34,7 @@ const formatTimeAgo = (date: Date): string => {
 };
 
 export default function Dashboard() {
+  const escritorio = useEscritorio();
   const stats = trpc.clientes.stats.useQuery();
   const recentClientes = trpc.clientes.list.useQuery({});
   const recentPeticoes = trpc.agente.listarPeticoes.useQuery({ limit: 5 });
@@ -89,7 +91,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Painel</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            Melo &amp; Preda Advogados
+            {escritorio.nome}
           </p>
         </div>
         <Button

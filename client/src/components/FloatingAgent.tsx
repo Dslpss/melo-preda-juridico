@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { useLocation } from "wouter";
+import { useEscritorio } from "@/hooks/useEscritorio";
 
 type ToolAction = {
   tool: string;
@@ -204,7 +205,7 @@ function getPageContext(path: string): PageContext {
 
   return contexts[path] || {
     titulo: "Agente IA Jurídico",
-    descricao: "Agente completo do escritório Melo & Preda. Posso analisar processos, gerar petições, buscar dados e executar ações no sistema.",
+    descricao: "Agente completo do escritório. Posso analisar processos, gerar petições, buscar dados e executar ações no sistema.",
     sugestoes: [
       "Diagnóstico do banco de dados",
       "Buscar cliente por nome",
@@ -271,6 +272,7 @@ export default function FloatingAgent() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [location] = useLocation();
 
+  const escritorio = useEscritorio();
   // Contexto inteligente da página atual
   const pageContext = useMemo(() => getPageContext(location), [location]);
 
@@ -322,9 +324,11 @@ export default function FloatingAgent() {
         toast.success(`Agente executou ${(result as any).totalTools} ação(ões)`);
       }
     } catch (error: any) {
+      const msg = error.message || "Tente novamente.";
+      if (msg.includes("Limite de requisições")) toast.error(msg, { duration: 6000 });
       setHistorico([
         ...novoHistorico,
-        { role: "assistant", content: `Erro: ${error.message || "Tente novamente."}` },
+        { role: "assistant", content: `⚠️ ${msg}` },
       ]);
     }
   }, [mensagem, historico, chatMutation, sessaoId, pageContext.modo, clienteIdFromUrl]);
@@ -340,6 +344,9 @@ export default function FloatingAgent() {
     setHistorico([]);
     toast.info("Conversa reiniciada");
   };
+
+  // Ocultar em páginas de chat (input do atendimento ocupa bottom-right)
+  if (location.startsWith("/atendimento/")) return null;
 
   // Botão flutuante
   if (!isOpen) {
@@ -379,7 +386,7 @@ export default function FloatingAgent() {
               <Scale className="h-4.5 w-4.5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold leading-tight tracking-wide">MELO & PREDA</h3>
+              <h3 className="text-sm font-bold leading-tight tracking-wide">{escritorio.nome}</h3>
               <p className="text-[10px] opacity-75 font-medium">Agente IA Jurídico Expert</p>
             </div>
           </div>

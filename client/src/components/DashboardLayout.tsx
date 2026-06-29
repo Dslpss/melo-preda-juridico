@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useEscritorio } from "@/hooks/useEscritorio";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -60,6 +61,7 @@ const configItems = [
   { icon: Building2, label: "Filiais", path: "/filiais" },
   { icon: Layers, label: "Setores", path: "/setores" },
   { icon: MessageSquare, label: "WhatsApp", path: "/configuracoes/whatsapp" },
+  { icon: Building2, label: "Escritório", path: "/configuracoes/escritorio" },
 ];
 
 // Flat list for route matching (includes all routes, even hidden ones)
@@ -268,6 +270,30 @@ function NotificacoesPanel() {
   );
 }
 
+// ==================== ATENDIMENTOS COM BADGE ====================
+function AtendimentosMenuItem({ location, setLocation }: { location: string; setLocation: (p: string) => void }) {
+  const { data: naoLidas = 0 } = trpc.atendimentos.naoLidas.useQuery(undefined, { refetchInterval: 5000 });
+  const isActive = location === "/atendimentos";
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        isActive={isActive}
+        onClick={() => setLocation("/atendimentos")}
+        tooltip="Atendimentos"
+        className="h-9 transition-all font-normal text-[13px]"
+      >
+        <MessageSquare className={`h-4 w-4 shrink-0 ${isActive ? "text-[oklch(0.75_0.12_85)]" : ""}`} />
+        <span className="truncate flex-1">Atendimentos</span>
+        {naoLidas > 0 && (
+          <span className="ml-auto flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-green-500 text-white text-[10px] font-bold leading-none">
+            {naoLidas > 99 ? "99+" : naoLidas}
+          </span>
+        )}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
 // ==================== CONFIGURAÇÕES SUBMENU ====================
 function ConfigSubmenu() {
   const [location, setLocation] = useLocation();
@@ -395,7 +421,7 @@ export default function DashboardLayout({
               <Scale className="h-10 w-10 text-white" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-white text-center">
-              Melo &amp; Preda Advogados
+              {escritorio.nome}
             </h1>
             <p className="text-sm text-gray-400 text-center max-w-sm">
               Sistema Jurídico Integrado
@@ -471,6 +497,7 @@ function DashboardLayoutContent({
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
+  const escritorio = useEscritorio();
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const activeMenuItem = allItems.find(item => location.startsWith(item.path) && item.path !== "/" ) || allItems.find(item => item.path === location);
@@ -532,7 +559,7 @@ function DashboardLayoutContent({
                 <div className="flex items-center gap-2 min-w-0">
                   <Scale className="h-5 w-5 text-[oklch(0.75_0.12_85)] shrink-0" />
                   <span className="font-semibold tracking-tight truncate text-sidebar-foreground text-sm">
-                    Melo &amp; Preda
+                    {escritorio.nome}
                   </span>
                 </div>
               ) : null}
@@ -542,7 +569,8 @@ function DashboardLayoutContent({
           <SidebarContent className="gap-0 overflow-y-auto scrollbar-thin">
             <SidebarGroup className="py-0">
               <SidebarMenu className="px-1 gap-0">
-                {menuItems.map(item => {
+                <AtendimentosMenuItem location={location} setLocation={setLocation} />
+                {menuItems.filter(i => i.path !== "/atendimentos").map(item => {
                   const isActive = location === item.path;
                   return (
                     <SidebarMenuItem key={item.path}>

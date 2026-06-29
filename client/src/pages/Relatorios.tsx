@@ -49,7 +49,7 @@ function gerarPdfHtml(titulo: string, subtitulo: string, conteudo: string): void
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>${titulo} - Melo & Preda Advogados</title>
+  <title>${titulo} - Castro Sociedade de Advogados</title>
   <style>
     @page { margin: 2cm; size: A4; }
     body { font-family: 'Times New Roman', serif; font-size: 11pt; line-height: 1.5; color: #1a1a1a; }

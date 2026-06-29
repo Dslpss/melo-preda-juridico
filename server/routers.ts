@@ -23,10 +23,29 @@ import {
 } from "../drizzle/schema";
 import { eq, like, desc, asc, and, sql, inArray } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
+import { extrairTextoPdf } from "./_core/pdfExtract";
 import { storagePut, storageGet } from "./storage";
 import { gerarPeticaoDocx } from "./docxGenerator";
 import { executarAgenteCompleto } from "./agenteExecutor";
 import { ENV } from "./_core/env";
+
+// Helper: carrega configurações do escritório da tabela agenteIaConfig
+async function loadEscritorioConfig(db: any): Promise<{ nome: string; advogado: string; oab: string; cidade: string }> {
+  try {
+    const rows = await db.select().from(agenteIaConfig)
+      .where(and(eq(agenteIaConfig.categoria, "escritorio"), eq(agenteIaConfig.ativo, 1)));
+    const map: Record<string, string> = {};
+    for (const r of rows) map[r.chave] = r.valor;
+    return {
+      nome: map["escritorio.nome"] || "Escritório de Advocacia",
+      advogado: map["escritorio.advogado"] || "",
+      oab: map["escritorio.oab"] || "",
+      cidade: map["escritorio.cidade"] || "",
+    };
+  } catch {
+    return { nome: "Escritório de Advocacia", advogado: "", oab: "", cidade: "" };
+  }
+}
 
 // Helper: sanitize name for folder path
 function sanitizeName(name: string): string {
@@ -290,7 +309,7 @@ async function autoUpdateRelatorioCadastral(db: any) {
   const relatorioData = {
     titulo: "Relat\u00f3rio de Dados Cadastrais - Clientes Pessoa F\u00edsica",
     dataGeracao: new Date().toISOString(),
-    escritorio: "Melo & Preda Advogados",
+    escritorio: "Castro Sociedade de Advogados",
     resumo: {
       totalClientesPF: clientesPF.length,
       totalClientesGeral: allClientes.length,
@@ -381,6 +400,56 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+  }),
+
+  // ==================== CONFIGURAÇÕES DO ESCRITÓRIO ====================
+  configuracoes: router({
+    getEscritorio: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return { nome: "", advogado: "", oab: "", cidade: "" };
+      const rows = await db.select().from(agenteIaConfig)
+        .where(and(eq(agenteIaConfig.categoria, "escritorio"), eq(agenteIaConfig.ativo, 1)));
+      const map: Record<string, string> = {};
+      for (const r of rows) map[r.chave] = r.valor;
+      return {
+        nome: map["escritorio.nome"] ?? "",
+        advogado: map["escritorio.advogado"] ?? "",
+        oab: map["escritorio.oab"] ?? "",
+        cidade: map["escritorio.cidade"] ?? "",
+      };
+    }),
+
+    setEscritorio: adminProcedure
+      .input(z.object({
+        nome: z.string(),
+        advogado: z.string(),
+        oab: z.string(),
+        cidade: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("DB indisponível");
+        const campos = [
+          { chave: "escritorio.nome", valor: input.nome, descricao: "Nome do escritório" },
+          { chave: "escritorio.advogado", valor: input.advogado, descricao: "Nome do advogado responsável" },
+          { chave: "escritorio.oab", valor: input.oab, descricao: "Número OAB do advogado" },
+          { chave: "escritorio.cidade", valor: input.cidade, descricao: "Cidade/UF do escritório" },
+        ];
+        for (const c of campos) {
+          const existing = await db.select().from(agenteIaConfig)
+            .where(eq(agenteIaConfig.chave, c.chave)).limit(1);
+          if (existing.length > 0) {
+            await db.update(agenteIaConfig).set({ valor: c.valor, updatedAt: new Date() })
+              .where(eq(agenteIaConfig.chave, c.chave));
+          } else {
+            await db.insert(agenteIaConfig).values({
+              chave: c.chave, valor: c.valor,
+              categoria: "escritorio", descricao: c.descricao, ativo: 1,
+            });
+          }
+        }
+        return { ok: true };
+      }),
   }),
 
   // ==================== CLIENTES ====================
@@ -892,28 +961,28 @@ export const appRouter = router({
         }
 
         // 1. Extract text from PDF
-        const pdfParse = (await import("pdf-parse")) as any;
         let textoExtraido = "";
         try {
-          const pdfData = await pdfParse(buffer);
-          textoExtraido = pdfData.text.substring(0, 50000);
+          textoExtraido = (await extrairTextoPdf(buffer)).substring(0, 50000);
         } catch (e) {
           textoExtraido = "Erro na extração de texto do PDF";
         }
 
         // 2. Use AI to extract structured data
+        const escrConfig = await loadEscritorioConfig(db);
+        const advogadoRef = escrConfig.advogado ? `do(a) ${escrConfig.advogado}${escrConfig.oab ? ` (OAB ${escrConfig.oab})` : ""}` : "do advogado responsável pelo escritório";
         const extractionPrompt = `Você é um assistente jurídico especializado em análise de processos judiciais brasileiros.
 Analise o texto extraído de um processo judicial e extraia TODOS os dados estruturados possíveis.
 
 REGRAS CRÍTICAS PARA IDENTIFICAÇÃO DO CLIENTE:
-- O escritório é MELO & PREDA ADVOGADOS, do Dr. PAULO DA SILVA MELO FILHO (OAB/GO 40.559)
-- O CLIENTE é SEMPRE a parte que o Dr. Paulo Melo representa no processo
-- Para identificar o cliente: procure quem outorgou procuração ao Dr. Paulo Melo ou quem ele representa como advogado
+- O escritório é ${escrConfig.nome}, ${advogadoRef}
+- O CLIENTE é SEMPRE a parte que o advogado do escritório representa no processo
+- Para identificar o cliente: procure quem outorgou procuração ao advogado do escritório ou quem ele representa
 - O cliente NUNCA é um banco (Bradesco, Itaú, Santander, Caixa, Inter, Pan, Safra, BB, BRB, etc.)
 - O cliente NUNCA é o advogado da parte contrária
-- Se o Dr. Paulo Melo representa o AUTOR, o cliente é o autor (pessoa física/jurídica que não é banco)
-- Se o Dr. Paulo Melo representa o RÉU, o cliente é o réu (pessoa física/jurídica que não é banco)
-- Em processos de cumprimento de sentença/execução, o cliente é quem o Dr. Paulo Melo representa, mesmo que a petição tenha sido protocolada pelo banco
+- Se o advogado do escritório representa o AUTOR, o cliente é o autor (pessoa física/jurídica que não é banco)
+- Se o advogado do escritório representa o RÉU, o cliente é o réu (pessoa física/jurídica que não é banco)
+- Em processos de cumprimento de sentença/execução, o cliente é quem o advogado do escritório representa, mesmo que a petição tenha sido protocolada pelo banco
 - Se houver dúvida, o cliente é a PESSOA FÍSICA mencionada no processo (não o banco, não o advogado)
 - Extraia CPF/CNPJ do CLIENTE identificado acima, não do advogado nem do banco
 
@@ -1040,9 +1109,9 @@ ${textoExtraido}`;
           const content = result.choices[0]?.message?.content;
           const textContent = typeof content === "string" ? content : Array.isArray(content) ? content.map((c: any) => c.type === "text" ? c.text : "").join("") : "";
           dadosExtraidos = JSON.parse(textContent);
-        } catch (e) {
+        } catch (e: any) {
           console.error("AI extraction error:", e);
-          dadosExtraidos = { error: "Falha na extração via IA" };
+          throw new Error(e?.message || "O assistente de IA está temporariamente indisponível. Entre em contato com o suporte técnico de TI.");
         }
 
         // 2.5. VALIDAÇÃO: Verificar se o LLM confundiu banco com cliente
@@ -1394,7 +1463,7 @@ ${textoExtraido}`;
 
         // 11.5. ANÁLISE PROFUNDA: Gerar estudo completo do processo para o banco de conhecimentos
         try {
-          const analiseProfundaPrompt = `Você é um advogado sênior expert do escritório MELO & PREDA ADVOGADOS.
+          const analiseProfundaPrompt = `Você é um advogado sênior expert do escritório Castro Sociedade de Advogados.
 Faça uma ANÁLISE PROFUNDA E COMPLETA do processo abaixo. Esta análise será usada como base de conhecimento para gerar petições, estratégias e qualquer ação futura.
 
 RETORNE UM JSON com esta estrutura:
@@ -1505,11 +1574,9 @@ ${textoExtraido.substring(0, 45000)}`;
 
         // 1. Extract text from PDF contracheque
         const buffer = Buffer.from(input.fileBase64, "base64");
-        const pdfParse = (await import("pdf-parse")) as any;
         let textoExtraido = "";
         try {
-          const pdfData = await pdfParse(buffer);
-          textoExtraido = pdfData.text.substring(0, 50000);
+          textoExtraido = (await extrairTextoPdf(buffer)).substring(0, 50000);
         } catch (e) {
           textoExtraido = "Erro na extração de texto do PDF";
         }
@@ -2744,7 +2811,7 @@ ${textoExtraido}`;
       const relatorioData = {
         titulo: "Relat\u00f3rio de Dados Cadastrais - Clientes Pessoa F\u00edsica",
         dataGeracao: new Date().toISOString(),
-        escritorio: "Melo & Preda Advogados",
+        escritorio: "Castro Sociedade de Advogados",
         resumo: {
           totalClientesPF: clientesPF.length,
           totalClientesGeral: totalClientes,
@@ -5210,7 +5277,7 @@ ESTRUTURA OBRIGATÓRIA:
           calculo: 'Realize CÁLCULOS JURÍDICOS precisos. CORREÇÃO MONETÁRIA: INPC mensal sobre principal (desde vencimento ou sentença). JUROS MORA: 1% a.m. (art. 406 CC + art. 161 §1º CTN) desde citação. MULTA: 10% sobre débito total após 15 dias (art. 523 §1º CPC). HONORÁRIOS: 10% sobre débito. Apresente DEMONSTRATIVO completo (art. 524 CPC): Principal → Correção → Juros → Multa → Honorários → TOTAL. Use valores reais dos processos.',
         };
 
-        const systemPrompt = `${config.system_prompt || 'Você é o Agente Jurídico Expert do escritório Melo & Preda Advogados.'}
+        const systemPrompt = `${config.system_prompt || 'Você é o Agente Jurídico Expert do escritório Castro Sociedade de Advogados.'}
 
 VOCÊ ESTUDOU TODOS OS PROCESSOS DO ESCRITÓRIO. Você conhece cada cliente, cada processo, cada valor, cada estratégia, cada prazo, cada empréstimo. Responda qualquer pergunta com base nos dados reais que você estudou.
 
@@ -5490,8 +5557,7 @@ ${conhecimentosProc.length > 0 ? conhecimentosProc.map(c => `[${c.categoria}] ${
         const estiloModel = todosConhecimentos.find(c => c.titulo?.includes('ESTILO') && c.categoria === 'Modelo');
         const instrucoesModel = todosConhecimentos.find(c => c.titulo?.includes('INSTRUÇÕES') && c.categoria === 'Modelo');
 
-        const systemPrompt = `Você é o PETICIONADOR EXPERT do escritório Melo & Preda Advogados (OAB/GO 40.559).
-Advogado: PAULO DA SILVA MELO FILHO
+        const systemPrompt = `Você é o PETICIONADOR EXPERT do escritório Castro Sociedade de Advogados.
 
 Gere a petição completa do tipo "${input.tipoPeticao}" seguindo RIGOROSAMENTE o padrão do escritório.
 
@@ -5531,7 +5597,7 @@ ${instrucoesModel?.conteudo?.substring(0, 2000) || ''}
    d) Teses centrais desenvolvidas com profundidade argumentativa
 6. **III — DOS PEDIDOS** — Numerados (a, b, c...), ESPECÍFICOS, com valores EXATOS quando aplicável. Tutela de urgência primeiro, honorários no final, incluir pedidos subsidiários
 7. **IV — DO VALOR DA CAUSA** — Valor REAL por extenso
-8. FECHO — "Nestes termos, pede deferimento. Goiânia/GO, [data atual]. PAULO DA SILVA MELO FILHO — OAB/GO 40.559"
+8. FECHO — "Nestes termos, pede deferimento. Goiânia/GO, [data atual]. [Advogado Responsável]"
 
 === BASE DE CONHECIMENTO JURÍDICO DO ESCRITÓRIO ===
 
@@ -6010,8 +6076,7 @@ REGRA ABSOLUTA: Não use NENHUM placeholder como [COMPLETAR], [INSERIR], [NOME],
         const configExpertise = configRows.find(c => c.chave === 'expertise_juridica');
         const configEstilo = configRows.find(c => c.chave === 'estilo_redacao');
 
-        const systemPrompt = `Você é o PETICIONADOR EXPERT do escritório Melo & Preda Advogados (OAB/GO 40.559).
-Advogado: PAULO DA SILVA MELO FILHO
+        const systemPrompt = `Você é o PETICIONADOR EXPERT do escritório Castro Sociedade de Advogados.
 Você ESTUDOU todos os processos do escritório e conhece profundamente cada caso.
 
 ${configExpertise?.valor ? `EXPERTISE: ${configExpertise.valor}` : ''}
@@ -6469,7 +6534,7 @@ ${pet.conteudoTexto || ''}
         const configRows = await db.select().from(agenteIaConfig);
         const configExpertise = configRows.find(c => c.chave === 'expertise_juridica');
 
-        const analysisPrompt = `Você é o Agente Jurídico Expert do escritório Melo & Preda Advogados.
+        const analysisPrompt = `Você é o Agente Jurídico Expert do escritório Castro Sociedade de Advogados.
 Você recebeu um novo documento (${input.nomeArquivo}) para o cliente ${cliente?.nomeCompleto || 'Desconhecido'}.
 
 PROCESSOS EXISTENTES DO CLIENTE:
@@ -6689,7 +6754,7 @@ PRODUZA UMA ANÁLISE COMPLETA COM:
 
         const result = await invokeLLM({
           messages: [
-            { role: 'system', content: config.system_prompt || 'Você é o Agente Jurídico Expert do escritório Melo & Preda Advogados.' },
+            { role: 'system', content: config.system_prompt || 'Você é o Agente Jurídico Expert do escritório Castro Sociedade de Advogados.' },
             { role: 'user', content: prompt }
           ]
         });
@@ -9852,6 +9917,31 @@ Retorne um JSON com os campos:
           .where(eq(atendimentos.id, input.id));
         return { ok: true };
       }),
+
+    deletar: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        await db.delete(mensagens).where(eq(mensagens.atendimentoId, input.id));
+        await db.delete(atendimentos).where(eq(atendimentos.id, input.id));
+        return { ok: true };
+      }),
+
+    naoLidas: protectedProcedure
+      .query(async () => {
+        const db = await getDb();
+        if (!db) return 0;
+        const [row] = await db
+          .select({ total: sql<number>`COUNT(DISTINCT ${mensagens.atendimentoId})` })
+          .from(mensagens)
+          .innerJoin(atendimentos, eq(mensagens.atendimentoId, atendimentos.id))
+          .where(and(
+            eq(mensagens.lida, 0),
+            eq(mensagens.origem, "cliente"),
+          ));
+        return row?.total ?? 0;
+      }),
   }),
 
   // ==================== MENSAGENS ====================
@@ -9904,6 +9994,47 @@ Retorne um JSON com os campos:
           .update(atendimentos)
           .set({ status: "em_atendimento" })
           .where(eq(atendimentos.id, input.atendimentoId));
+
+        return { ok: true };
+      }),
+
+    sendMedia: protectedProcedure
+      .input(z.object({
+        atendimentoId: z.number(),
+        base64: z.string(),
+        mimeType: z.string(),
+        fileName: z.string(),
+        caption: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+        const atRows = await db.select().from(atendimentos).where(eq(atendimentos.id, input.atendimentoId)).limit(1);
+        if (!atRows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Atendimento não encontrado" });
+
+        const { enviarMidiaBase64 } = await import("./whatsapp");
+        const ok = await enviarMidiaBase64(
+          atRows[0].telefoneCliente,
+          input.base64,
+          input.mimeType,
+          input.fileName,
+          input.caption
+        );
+        if (!ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao enviar mídia via WhatsApp" });
+
+        const isImage = input.mimeType.startsWith("image/");
+        const tipo = isImage ? "imagem" : "documento";
+
+        await db.insert(mensagens).values({
+          atendimentoId: input.atendimentoId,
+          origem: "atendente",
+          tipo,
+          conteudo: input.caption || input.fileName,
+          lida: 1,
+        });
+
+        await db.update(atendimentos).set({ status: "em_atendimento" }).where(eq(atendimentos.id, input.atendimentoId));
 
         return { ok: true };
       }),
@@ -10163,9 +10294,7 @@ async function processarJobImportacaoPdf(jobId: number, inputData: any) {
     await updateProgress(10, 'Extraindo texto do PDF...');
     let textoExtraido = '';
     try {
-      const pdfParse = (await import('pdf-parse') as any).default || (await import('pdf-parse'));
-      const pdfData = await pdfParse(pdfBuffer);
-      textoExtraido = pdfData.text || '';
+      textoExtraido = await extrairTextoPdf(pdfBuffer);
     } catch { textoExtraido = ''; }
 
     if (!textoExtraido.trim()) {
@@ -10747,7 +10876,7 @@ ${textoTruncado}`;
     await updateProgress(88, 'Gerando análise profunda do processo...');
     // 11.5. ANÁLISE PROFUNDA: Gerar estudo completo do processo
     try {
-      const analiseProfundaPromptJob = `Você é um advogado sênior expert do escritório MELO & PREDA ADVOGADOS.
+      const analiseProfundaPromptJob = `Você é um advogado sênior expert do escritório Castro Sociedade de Advogados.
 Faça uma ANÁLISE PROFUNDA E COMPLETA do processo abaixo. Esta análise será usada como base de conhecimento para gerar petições, estratégias e qualquer ação futura.
 
 RETORNE UM JSON com esta estrutura:
@@ -10868,9 +10997,7 @@ async function processarJobImportacaoContracheque(jobId: number, inputData: any)
     const pdfBuffer = Buffer.from(inputData.fileBase64, 'base64');
     let textoExtraido = '';
     try {
-      const pdfParse = (await import('pdf-parse') as any).default || (await import('pdf-parse'));
-      const pdfData = await pdfParse(pdfBuffer);
-      textoExtraido = pdfData.text || '';
+      textoExtraido = await extrairTextoPdf(pdfBuffer);
     } catch { textoExtraido = ''; }
 
     if (!textoExtraido.trim()) {

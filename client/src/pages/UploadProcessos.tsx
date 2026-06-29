@@ -136,6 +136,8 @@ function ProcessoUpload() {
           friendlyError = "Processo ou cliente já cadastrado no sistema.";
         } else if (friendlyError.includes("Failed query")) {
           friendlyError = "Erro ao salvar no banco de dados. Verifique os dados do PDF.";
+        } else if (friendlyError.includes("temporariamente indisponível") || friendlyError.includes("429")) {
+          friendlyError = "O assistente de IA está temporariamente indisponível. Entre em contato com o suporte técnico de TI.";
         } else if (friendlyError.includes("AI extraction") || friendlyError.includes("invokeLLM")) {
           friendlyError = "Falha na extração via IA. O PDF pode estar em formato não suportado.";
         } else if (friendlyError.includes("Network") || friendlyError.includes("fetch")) {
