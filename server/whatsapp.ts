@@ -34,6 +34,27 @@ export async function enviarMensagemTexto(
   });
 }
 
+export async function enviarMidiaBase64(
+  telefone: string,
+  base64: string,
+  mimeType: string,
+  fileName: string,
+  caption?: string
+): Promise<boolean> {
+  const isImage = mimeType.startsWith("image/");
+  const isAudio = mimeType.startsWith("audio/");
+  const isVideo = mimeType.startsWith("video/");
+  const mediatype = isImage ? "image" : isAudio ? "audio" : isVideo ? "video" : "document";
+  return evolutionRequest(`/message/sendMedia/${INSTANCE}`, {
+    number: resolverNumber(telefone),
+    mediatype,
+    mimetype: mimeType,
+    caption: caption ?? (isImage ? "" : fileName),
+    media: base64,
+    fileName,
+  });
+}
+
 export async function enviarDocumentoWhatsApp(
   telefone: string,
   mediaUrl: string,
@@ -64,6 +85,16 @@ export function extrairTextoMensagem(data: EvolutionMessageData): string {
     ((msg.videoMessage as { caption?: string } | undefined)?.caption) ??
     ""
   );
+}
+
+export function extrairMediaUrl(data: EvolutionMessageData): string | null {
+  const msg = data.message ?? {} as any;
+  const thumb =
+    msg.imageMessage?.jpegThumbnail ??
+    msg.videoMessage?.jpegThumbnail ??
+    null;
+  if (thumb) return `data:image/jpeg;base64,${thumb}`;
+  return null;
 }
 
 export function extrairTipoMensagem(

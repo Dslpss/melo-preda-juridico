@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MessageSquare, Phone, Clock, User } from "lucide-react";
+import { MessageSquare, Phone, Clock, User, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -32,67 +32,153 @@ const statusVariant: Record<
   encerrado: "outline",
 };
 
+function ConfirmDeleteModal({
+  nome,
+  onConfirm,
+  onCancel,
+}: {
+  nome: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-background rounded-xl shadow-lg w-full max-w-sm mx-4 p-6 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-full bg-destructive/10 flex items-center justify-center shrink-0">
+            <Trash2 className="h-5 w-5 text-destructive" />
+          </div>
+          <div>
+            <p className="font-semibold text-sm">Deletar atendimento</p>
+            <p className="text-xs text-muted-foreground">{nome}</p>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Todas as mensagens serão apagadas permanentemente. Essa ação não pode ser desfeita.
+        </p>
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" size="sm" onClick={onCancel}>
+            Cancelar
+          </Button>
+          <Button variant="destructive" size="sm" onClick={onConfirm}>
+            Deletar
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Atendimentos() {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("aberto");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
   const [setorFilter, setSetorFilter] = useState<string>("todos");
+  const [confirmId, setConfirmId] = useState<number | null>(null);
   const [, navigate] = useLocation();
 
-  const { data: atendimentos = [], isLoading } = trpc.atendimentos.list.useQuery(
-    {
-      status: statusFilter === "todos" ? undefined : statusFilter,
-      setorId: setorFilter !== "todos" ? Number(setorFilter) : undefined,
-    },
+  // Busca todos para contagem, filtra no client
+  const { data: todos = [], isLoading } = trpc.atendimentos.list.useQuery(
+    { setorId: setorFilter !== "todos" ? Number(setorFilter) : undefined },
     { refetchInterval: 5000 }
   );
 
-  const { data: setores = [] } = trpc.setores.list.useQuery();
+  const atendimentos = statusFilter === "todos"
+    ? todos
+    : todos.filter((a) => a.status === statusFilter);
 
-  const abertos = atendimentos.filter((a) => a.status === "aberto").length;
-  const emAtendimento = atendimentos.filter(
-    (a) => a.status === "em_atendimento"
-  ).length;
+  const { data: setores = [] } = trpc.setores.list.useQuery();
+  const utils = trpc.useUtils();
+  const deletar = trpc.atendimentos.deletar.useMutation({
+    onSuccess: () => {
+      setConfirmId(null);
+      utils.atendimentos.list.invalidate();
+    },
+  });
+
+  const contagem = {
+    todos: todos.length,
+    aberto: todos.filter((a) => a.status === "aberto").length,
+    em_atendimento: todos.filter((a) => a.status === "em_atendimento").length,
+    encerrado: todos.filter((a) => a.status === "encerrado").length,
+  };
+
+  const confirmTarget = confirmId != null
+    ? atendimentos.find((a) => a.id === confirmId)
+    : null;
 
   return (
     <div className="p-6 space-y-6">
+      {confirmTarget && (
+        <ConfirmDeleteModal
+          nome={confirmTarget.nomeCliente ?? confirmTarget.telefoneCliente}
+          onConfirm={() => deletar.mutate({ id: confirmTarget.id })}
+          onCancel={() => setConfirmId(null)}
+        />
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Atendimentos WhatsApp</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {abertos} abertos · {emAtendimento} em atendimento
+            {contagem.aberto} aguardando · {contagem.em_atendimento} em atendimento · {contagem.encerrado} encerrados
           </p>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <Select
-          value={statusFilter}
-          onValueChange={(v) => setStatusFilter(v as StatusFilter)}
-        >
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos os status</SelectItem>
-            <SelectItem value="aberto">Aberto</SelectItem>
-            <SelectItem value="em_atendimento">Em Atendimento</SelectItem>
-            <SelectItem value="encerrado">Encerrado</SelectItem>
-          </SelectContent>
-        </Select>
+      {/* Tabs de status */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {(["todos", "aberto", "em_atendimento", "encerrado"] as StatusFilter[]).map((s) => {
+          const labels: Record<StatusFilter, string> = {
+            todos: "Todos",
+            aberto: "Aguardando",
+            em_atendimento: "Em Atendimento",
+            encerrado: "Encerrados",
+          };
+          const colors: Record<StatusFilter, string> = {
+            todos: "bg-gray-100 text-gray-700 hover:bg-gray-200",
+            aberto: "bg-orange-100 text-orange-700 hover:bg-orange-200",
+            em_atendimento: "bg-amber-100 text-amber-800 hover:bg-amber-200",
+            encerrado: "bg-gray-100 text-gray-500 hover:bg-gray-200",
+          };
+          const activeColors: Record<StatusFilter, string> = {
+            todos: "bg-gray-800 text-white",
+            aberto: "bg-orange-500 text-white",
+            em_atendimento: "bg-amber-600 text-white",
+            encerrado: "bg-gray-500 text-white",
+          };
+          const isActive = statusFilter === s;
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? activeColors[s] : colors[s]}`}
+            >
+              {labels[s]}
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${isActive ? "bg-white/20" : "bg-black/10"}`}>
+                {contagem[s]}
+              </span>
+            </button>
+          );
+        })}
 
-        <Select value={setorFilter} onValueChange={setSetorFilter}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Setor" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos os setores</SelectItem>
-            {setores.map((s) => (
-              <SelectItem key={s.id} value={String(s.id)}>
-                {s.nome}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {setores.length > 0 && (
+          <Select value={setorFilter} onValueChange={setSetorFilter}>
+            <SelectTrigger className="w-44 h-8 text-sm ml-2">
+              <SelectValue placeholder="Setor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os setores</SelectItem>
+              {setores.map((s) => (
+                <SelectItem key={s.id} value={String(s.id)}>{s.nome}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* Cards */}
@@ -151,17 +237,30 @@ export default function Atendimentos() {
                     })}
                   </span>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2 text-xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/atendimento/${a.id}`);
-                  }}
-                >
-                  Abrir chat
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/atendimento/${a.id}`);
+                    }}
+                  >
+                    Abrir chat
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmId(a.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
           ))}

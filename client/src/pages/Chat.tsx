@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Send, UserCheck, XCircle, Phone, FileText } from "lucide-react";
+import { ArrowLeft, Send, UserCheck, XCircle, Phone, FileText, Paperclip, Image, X } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -44,6 +44,8 @@ export default function Chat() {
   const atendimentoId = Number(id ?? "0");
   const [, navigate] = useLocation();
   const [texto, setTexto] = useState("");
+  const [mediaPreview, setMediaPreview] = useState<{ base64: string; mimeType: string; fileName: string; previewUrl: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [transferDialog, setTransferDialog] = useState(false);
   const [transferSetorId, setTransferSetorId] = useState<string>("");
   const [obsTexto, setObsTexto] = useState("");
@@ -77,6 +79,44 @@ export default function Chat() {
     { clienteId: clienteId! },
     { enabled: clienteId !== null }
   );
+
+  const sendMediaMutation = trpc.mensagens.sendMedia.useMutation({
+    onSuccess: () => {
+      setMediaPreview(null);
+      utils.mensagens.listByAtendimento.invalidate({ atendimentoId });
+    },
+    onError: (e) => toast.error(e.message ?? "Erro ao enviar arquivo"),
+  });
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(",")[1];
+      setMediaPreview({
+        base64,
+        mimeType: file.type,
+        fileName: file.name,
+        previewUrl: dataUrl,
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function handleSendMedia() {
+    if (!mediaPreview) return;
+    sendMediaMutation.mutate({
+      atendimentoId,
+      base64: mediaPreview.base64,
+      mimeType: mediaPreview.mimeType,
+      fileName: mediaPreview.fileName,
+      caption: texto.trim() || undefined,
+    });
+    setTexto("");
+  }
 
   const sendMutation = trpc.mensagens.send.useMutation({
     onSuccess: () => {
@@ -242,7 +282,28 @@ export default function Chat() {
                       : "bg-muted rounded-bl-sm"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap break-words">{m.conteudo}</p>
+                  {m.tipo === "documento" && (
+                    <div className="flex items-center gap-2 mb-1">
+                      <FileText className="h-4 w-4 shrink-0 opacity-70" />
+                      <span className="text-xs opacity-80">Documento</span>
+                    </div>
+                  )}
+                  {m.tipo === "imagem" && (m as any).mediaUrl ? (
+                    <div className="mb-1">
+                      <img
+                        src={(m as any).mediaUrl}
+                        alt={m.conteudo || "Imagem"}
+                        className="max-w-[220px] rounded-lg object-cover cursor-pointer"
+                        onClick={() => window.open((m as any).mediaUrl, "_blank")}
+                      />
+                    </div>
+                  ) : m.tipo === "imagem" ? (
+                    <div className="flex items-center gap-2 mb-1">
+                      <Image className="h-4 w-4 shrink-0 opacity-70" />
+                      <span className="text-xs opacity-80">Imagem</span>
+                    </div>
+                  ) : null}
+                  {m.conteudo && <p className="whitespace-pre-wrap break-words">{m.conteudo}</p>}
                   <p
                     className={`text-[10px] mt-1 ${
                       m.origem === "atendente"
@@ -261,24 +322,70 @@ export default function Chat() {
 
         {/* Input */}
         {!encerrado && (
-          <div className="p-4 border-t bg-background flex gap-2">
-            <Textarea
-              value={texto}
-              onChange={(e) => setTexto(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Digite sua mensagem... (Enter para enviar)"
-              className="resize-none min-h-[44px] max-h-32"
-              rows={1}
-              disabled={sendMutation.isPending}
-            />
-            <Button
-              onClick={handleSend}
-              disabled={!texto.trim() || sendMutation.isPending}
-              size="icon"
-              className="shrink-0 h-11 w-11"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+          <div className="border-t bg-background">
+            {/* Media preview */}
+            {mediaPreview && (
+              <div className="px-4 pt-3 flex items-center gap-3">
+                <div className="relative flex items-center gap-2 bg-muted rounded-lg px-3 py-2 flex-1 max-w-xs">
+                  {mediaPreview.mimeType.startsWith("image/") ? (
+                    <img src={mediaPreview.previewUrl} className="h-12 w-12 object-cover rounded" alt="" />
+                  ) : (
+                    <FileText className="h-8 w-8 text-muted-foreground shrink-0" />
+                  )}
+                  <span className="text-xs truncate flex-1">{mediaPreview.fileName}</span>
+                  <button
+                    className="text-muted-foreground hover:text-foreground shrink-0"
+                    onClick={() => setMediaPreview(null)}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <Button
+                  onClick={handleSendMedia}
+                  disabled={sendMediaMutation.isPending}
+                  size="sm"
+                  className="shrink-0"
+                >
+                  {sendMediaMutation.isPending ? "Enviando..." : "Enviar"}
+                </Button>
+              </div>
+            )}
+            <div className="p-4 flex gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip"
+                onChange={handleFileSelect}
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0 h-11 w-11 text-muted-foreground"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+              <Textarea
+                value={texto}
+                onChange={(e) => setTexto(e.target.value)}
+                onKeyDown={mediaPreview ? undefined : handleKeyDown}
+                placeholder={mediaPreview ? "Legenda (opcional)..." : "Digite sua mensagem... (Enter para enviar)"}
+                className="resize-none min-h-[44px] max-h-32"
+                rows={1}
+                disabled={sendMutation.isPending || sendMediaMutation.isPending}
+              />
+              {!mediaPreview && (
+                <Button
+                  onClick={handleSend}
+                  disabled={!texto.trim() || sendMutation.isPending}
+                  size="icon"
+                  className="shrink-0 h-11 w-11"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
         )}
         {encerrado && (

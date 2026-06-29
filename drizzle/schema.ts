@@ -881,6 +881,7 @@ export const mensagens = mysqlTable("mensagens", {
   origem: mysqlEnum("origem", ["cliente", "atendente", "sistema"]).notNull(),
   tipo: mysqlEnum("tipo", ["texto", "audio", "imagem", "documento", "video"]).default("texto").notNull(),
   conteudo: text("conteudo").notNull(),
+  mediaUrl: text("mediaUrl"),
   evolutionMsgId: varchar("evolutionMsgId", { length: 100 }),
   usuarioId: int("usuarioId"),
   lida: int("lida").default(0).notNull(),

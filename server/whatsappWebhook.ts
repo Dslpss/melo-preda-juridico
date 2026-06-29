@@ -1,4 +1,3 @@
-// server/whatsappWebhook.ts
 import { Router, type Request, type Response } from "express";
 import mysql from "mysql2/promise";
 import { getDb } from "./db";
@@ -7,15 +6,17 @@ import { eq, desc } from "drizzle-orm";
 import {
   extrairTextoMensagem,
   extrairTipoMensagem,
+  extrairMediaUrl,
   type EvolutionWebhookPayload,
 } from "./whatsapp";
 
 export const whatsappWebhookRouter = Router();
 
-// Lock para evitar race condition em chats.upsert duplicados
+// Lock para evitar race condition
 const processingJids = new Set<string>();
+const processingMsgIds = new Set<string>();
 
-// Conexão direta ao DB do Evolution para buscar mensagens @lid
+// Conexão direta ao DB do Evolution
 let evolutionDb: mysql.Connection | null = null;
 async function getEvolutionDb(): Promise<mysql.Connection | null> {
   try {
@@ -35,15 +36,12 @@ async function getEvolutionDb(): Promise<mysql.Connection | null> {
 }
 
 function extrairTelefoneJid(remoteJid: string): string {
-  // @s.whatsapp.net → número
   if (remoteJid.includes("@s.whatsapp.net")) {
     return remoteJid.replace("@s.whatsapp.net", "");
   }
-  // @lid → usa o id numérico como identificador (prefixado para distinguir)
   if (remoteJid.includes("@lid")) {
     return `lid:${remoteJid.replace("@lid", "")}`;
   }
-  // grupos @g.us → ignorar
   return remoteJid.replace(/@.+$/, "");
 }
 
@@ -54,13 +52,17 @@ async function processarMensagem(
   messageData: unknown,
   messageType: string
 ) {
-  if (remoteJid.includes("@g.us")) return; // ignorar grupos
+  if (remoteJid.includes("@g.us")) return;
 
   const db = await getDb();
   if (!db) return;
 
   // Dedup por evolutionMsgId
   if (msgId) {
+    if (processingMsgIds.has(msgId)) return;
+    processingMsgIds.add(msgId);
+    setTimeout(() => processingMsgIds.delete(msgId), 30_000);
+
     const dup = await db
       .select({ id: mensagens.id })
       .from(mensagens)
@@ -72,14 +74,13 @@ async function processarMensagem(
   const telefone = extrairTelefoneJid(remoteJid);
   const nomeCliente = pushName ?? null;
 
-  // Texto e tipo da mensagem
   const msgObj = { message: messageData, messageType } as any;
   const conteudo = extrairTextoMensagem(msgObj);
   const tipo = extrairTipoMensagem(msgObj);
+  const mediaUrl = extrairMediaUrl(msgObj);
 
-  if (!conteudo && tipo === "texto") return; // mensagem vazia
+  if (!conteudo && tipo === "texto") return;
 
-  // Buscar ou criar atendimento
   const existing = await db
     .select()
     .from(atendimentos)
@@ -89,13 +90,13 @@ async function processarMensagem(
 
   let atendimentoId: number;
 
-  if (existing.length > 0 && existing[0].status !== "encerrado") {
+  if (existing.length > 0) {
     atendimentoId = existing[0].id;
-    if (nomeCliente && !existing[0].nomeCliente) {
-      await db
-        .update(atendimentos)
-        .set({ nomeCliente })
-        .where(eq(atendimentos.id, atendimentoId));
+    const updates: Record<string, unknown> = {};
+    if (existing[0].status === "encerrado") updates.status = "aberto";
+    if (nomeCliente && !existing[0].nomeCliente) updates.nomeCliente = nomeCliente;
+    if (Object.keys(updates).length > 0) {
+      await db.update(atendimentos).set(updates).where(eq(atendimentos.id, atendimentoId));
     }
   } else {
     const clienteRows = await db
@@ -119,18 +120,83 @@ async function processarMensagem(
     origem: "cliente",
     tipo,
     conteudo: conteudo || `[${tipo}]`,
+    mediaUrl: mediaUrl ?? null,
     evolutionMsgId: msgId ?? null,
     lida: 0,
   });
+
+  console.log(`[WhatsApp] mensagem processada: ${telefone} → atendimento ${atendimentoId}`);
 }
 
+// ============================================================
+// Polling: Evolution não dispara webhook para @lid JIDs.
+// A cada 5s, busca mensagens novas no DB do Evolution.
+// ============================================================
+// 5min atrás — pega mensagens recebidas durante restart sem reprocessar histórico
+let lastPolledTimestamp = Math.floor(Date.now() / 1000) - 300;
+
+async function pollEvolutionMessages() {
+  const eDb = await getEvolutionDb();
+  if (!eDb) return;
+
+  try {
+    const [rows] = await eDb.execute(
+      `SELECT id, \`key\`, message, messageType, pushName, messageTimestamp
+       FROM Message
+       WHERE JSON_VALUE(\`key\`, '$.fromMe') = 'false'
+         AND messageTimestamp > ?
+       ORDER BY messageTimestamp ASC`,
+      [lastPolledTimestamp]
+    ) as [any[], any];
+
+    if (!rows?.length) return;
+
+    lastPolledTimestamp = rows[rows.length - 1].messageTimestamp;
+
+    // Agrupar por JID — processar todas msgs, mas sequencialmente por JID
+    // para evitar race condition no INSERT de atendimento
+    const byJid = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const key = typeof row.key === "string" ? JSON.parse(row.key) : row.key;
+      const remoteJid: string = key.remoteJid ?? "";
+      if (!remoteJid || remoteJid.includes("@g.us")) continue;
+      const jidReal: string = key.remoteJidAlt ?? remoteJid;
+      const bucket = byJid.get(jidReal) ?? [];
+      bucket.push({ row, key });
+      byJid.set(jidReal, bucket);
+    }
+
+    // Processar cada JID sequencialmente (evita duplicar atendimento)
+    for (const [jidReal, entries] of byJid) {
+      for (const { row, key } of entries) {
+        const message = typeof row.message === "string" ? JSON.parse(row.message) : row.message;
+        await processarMensagem(
+          jidReal,
+          key.id,
+          row.pushName ?? null,
+          message,
+          row.messageType ?? "conversation"
+        ).catch(console.error);
+      }
+    }
+  } catch (e) {
+    console.error("[WhatsApp poll] erro:", e);
+  }
+}
+
+// Iniciar polling ao carregar o módulo
+setInterval(pollEvolutionMessages, 5_000);
+console.log("[WhatsApp] polling Evolution DB ativo (5s)");
+
+// ============================================================
+// Webhook HTTP (fallback para @s.whatsapp.net que funciona)
+// ============================================================
 whatsappWebhookRouter.post("/webhook", async (req: Request, res: Response) => {
   res.status(200).json({ ok: true });
 
   const payload = req.body as EvolutionWebhookPayload;
   const event = payload.event;
 
-  // === messages.upsert — mensagem em tempo real (JIDs @s.whatsapp.net) ===
   if (event === "messages.upsert") {
     const rawData = (payload as any).data;
     const dataArr = Array.isArray(rawData) ? rawData : [rawData];
@@ -147,7 +213,6 @@ whatsappWebhookRouter.post("/webhook", async (req: Request, res: Response) => {
     return;
   }
 
-  // === chats.upsert — chat atualizado (nova mensagem @lid) ===
   if (event === "chats.upsert") {
     const rawData = (payload as any).data;
     const chats = Array.isArray(rawData) ? rawData : [rawData];
@@ -156,11 +221,9 @@ whatsappWebhookRouter.post("/webhook", async (req: Request, res: Response) => {
     if (!eDb) return;
 
     for (const chat of chats) {
-      // chats.upsert pode ter id como CUID (DB interno) ou como JID
       let remoteJid: string = chat?.remoteJid ?? chat?.id ?? "";
       if (!remoteJid) continue;
 
-      // Se é um CUID (não contém @), buscar remoteJid via tabela Chat
       if (!remoteJid.includes("@")) {
         try {
           const [chatRows] = await eDb.execute(
@@ -170,7 +233,6 @@ whatsappWebhookRouter.post("/webhook", async (req: Request, res: Response) => {
           if (chatRows?.length) {
             remoteJid = chatRows[0].remoteJid;
           } else {
-            // Chat novo ainda não salvo na tabela — buscar mensagem mais recente (últimos 60s)
             const cutoff = Math.floor(Date.now() / 1000) - 60;
             const [recentRows] = await eDb.execute(
               `SELECT JSON_UNQUOTE(JSON_EXTRACT(\`key\`, '$.remoteJid')) as jid
@@ -191,9 +253,8 @@ whatsappWebhookRouter.post("/webhook", async (req: Request, res: Response) => {
       processingJids.add(remoteJid);
 
       try {
-        // Buscar a última mensagem recebida deste chat no DB Evolution
         const [rows] = await eDb.execute(
-          `SELECT id, \`key\`, message, messageType, pushName, messageTimestamp
+          `SELECT id, \`key\`, message, messageType, pushName
            FROM Message
            WHERE JSON_UNQUOTE(JSON_EXTRACT(\`key\`, '$.remoteJid')) = ?
              AND JSON_VALUE(\`key\`, '$.fromMe') = 'false'
@@ -206,8 +267,6 @@ whatsappWebhookRouter.post("/webhook", async (req: Request, res: Response) => {
         const row = rows[0];
         const key = typeof row.key === "string" ? JSON.parse(row.key) : row.key;
         const message = typeof row.message === "string" ? JSON.parse(row.message) : row.message;
-
-        // remoteJidAlt tem o número real quando remoteJid é @lid
         const jidReal = key.remoteJidAlt ?? remoteJid;
 
         await processarMensagem(
