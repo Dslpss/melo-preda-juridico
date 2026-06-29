@@ -110,3 +110,15 @@ temp/
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
 .github/workflows/
+
+# Claude Code session files
+.claude/
+
+# Local file storage (uploads/PDFs gerados localmente)
+.local-storage/
+
+# Superpowers / docs internos
+docs/superpowers/
+
+# QR code WhatsApp gerado em runtime
+qr.png
