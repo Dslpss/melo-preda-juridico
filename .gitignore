@@ -111,6 +111,9 @@ temp/
 .webdev/
 .github/workflows/
 
+# Manus platform internals (contém queries e dados sensíveis)
+.manus/
+
 # Claude Code session files
 .claude/
 
