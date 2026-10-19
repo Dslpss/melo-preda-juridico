@@ -24,6 +24,7 @@ import {
 import { eq, like, desc, asc, and, sql, inArray } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
 import { extrairTextoPdf } from "./_core/pdfExtract";
+import { prepararTextoParaIA, blocoCamposDeterministicos, completarComCamposDeterministicos, analiseProfundaHabilitada } from "./_core/pdfPreprocess";
 import { storagePut, storageGet } from "./storage";
 import { gerarPeticaoDocx } from "./docxGenerator";
 import { executarAgenteCompleto } from "./agenteExecutor";
@@ -503,7 +504,10 @@ export const appRouter = router({
           const movs = await db.select().from(movimentacoes).where(eq(movimentacoes.processoId, p.id)).orderBy(desc(movimentacoes.createdAt));
           const cumps = await db.select().from(cumprimentosSentenca).where(eq(cumprimentosSentenca.processoId, p.id));
           const movFin = await db.select().from(movimentacoesFinanceiras).where(eq(movimentacoesFinanceiras.processoId, p.id)).orderBy(desc(movimentacoesFinanceiras.createdAt));
-          return { ...p, estrategias: estrats, partes, movimentacoes: movs, cumprimentos: cumps, movimentacoesFinanceiras: movFin };
+          const [origem] = p.processoOrigemId
+            ? await db.select({ numeroCnj: processos.numeroCnj }).from(processos).where(eq(processos.id, p.processoOrigemId)).limit(1)
+            : [];
+          return { ...p, processoOrigemCnj: origem?.numeroCnj ?? null, estrategias: estrats, partes, movimentacoes: movs, cumprimentos: cumps, movimentacoesFinanceiras: movFin };
         }));
 
         // Buscar todas as movimentações financeiras do cliente (consolidado)
@@ -617,6 +621,10 @@ export const appRouter = router({
         cep: z.string().optional(),
         telefone: z.string().optional(),
         email: z.string().optional(),
+        estadoCivil: z.string().optional(),
+        dataNascimento: z.string().max(10).optional(),
+        nacionalidade: z.string().optional(),
+        vinculoFuncional: z.string().optional(),
         observacoes: z.string().optional(),
         filialId: z.number().nullable().optional(),
         preferenciaContato: z.enum(["whatsapp", "ligacao", "audio", "presencial"]).optional(),
@@ -859,6 +867,76 @@ export const appRouter = router({
           .limit(lim);
         return rows;
       }),
+    // Revisão manual dos dados extraídos pela IA
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        numeroCnj: z.string().min(1).optional(),
+        tribunal: z.string().nullable().optional(),
+        comarca: z.string().nullable().optional(),
+        vara: z.string().nullable().optional(),
+        tipoAcao: z.string().nullable().optional(),
+        natureza: z.string().nullable().optional(),
+        classeProcessual: z.string().nullable().optional(),
+        assunto: z.string().nullable().optional(),
+        faseAtual: z.string().nullable().optional(),
+        statusProcesso: z.string().nullable().optional(),
+        dataDistribuicao: z.string().nullable().optional(),
+        dataSentenca: z.string().nullable().optional(),
+        juiz: z.string().nullable().optional(),
+        poloAtivo: z.string().nullable().optional(),
+        poloPassivo: z.string().nullable().optional(),
+        advogadoAutor: z.string().nullable().optional(),
+        resumoSentenca: z.string().nullable().optional(),
+        valorCausa: z.number().nullable().optional(),
+        valorCondenacao: z.number().nullable().optional(),
+        danosMorais: z.number().nullable().optional(),
+        danosMateriais: z.number().nullable().optional(),
+        restituicao: z.number().nullable().optional(),
+        honorariosPerc: z.number().min(0).max(100).nullable().optional(),
+        honorariosValor: z.number().nullable().optional(),
+        tutelaTipo: z.string().nullable().optional(),
+        tutelaStatus: z.string().nullable().optional(),
+        tutelaDescricao: z.string().nullable().optional(),
+        tipoVinculo: z.string().nullable().optional(),
+        // Nº CNJ do processo principal; vazio remove o vínculo
+        processoOrigemCnj: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const { id, processoOrigemCnj, ...fields } = input;
+        const decimais = ["valorCausa", "valorCondenacao", "danosMorais", "danosMateriais", "restituicao", "honorariosPerc", "honorariosValor"];
+        const updateData: Record<string, any> = {};
+        for (const [key, val] of Object.entries(fields)) {
+          if (val === undefined) continue;
+          if (decimais.includes(key)) updateData[key] = val === null ? null : String(val);
+          else updateData[key] = typeof val === "string" ? (val.trim() || null) : val;
+        }
+
+        if (updateData.numeroCnj) {
+          const [outro] = await db.select({ id: processos.id }).from(processos)
+            .where(and(eq(processos.numeroCnj, updateData.numeroCnj), sql`${processos.id} <> ${id}`)).limit(1);
+          if (outro) throw new TRPCError({ code: "CONFLICT", message: `Já existe outro processo com o nº ${updateData.numeroCnj}` });
+        }
+
+        if (processoOrigemCnj !== undefined) {
+          const cnj = processoOrigemCnj?.trim();
+          if (!cnj) {
+            updateData.processoOrigemId = null;
+          } else {
+            const [origem] = await db.select({ id: processos.id }).from(processos).where(eq(processos.numeroCnj, cnj)).limit(1);
+            if (!origem) throw new TRPCError({ code: "NOT_FOUND", message: `Processo de origem ${cnj} não está cadastrado no sistema` });
+            if (origem.id === id) throw new TRPCError({ code: "BAD_REQUEST", message: "O processo não pode ser origem de si mesmo" });
+            updateData.processoOrigemId = origem.id;
+          }
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          await db.update(processos).set(updateData).where(eq(processos.id, id));
+        }
+        return { success: true };
+      }),
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
@@ -967,6 +1045,9 @@ export const appRouter = router({
         } catch (e) {
           textoExtraido = "Erro na extração de texto do PDF";
         }
+        // 1.5. Limpa o texto, extrai CNJ/CPF/CNPJ por regex e reduz ao que importa para a IA
+        const textoIA = prepararTextoParaIA(textoExtraido);
+        console.log(`[Upload] Texto para IA: ${textoIA.tamanhoOriginal} -> ${textoIA.tamanhoFinal} caracteres`);
 
         // 2. Use AI to extract structured data
         const escrConfig = await loadEscritorioConfig(db);
@@ -1094,8 +1175,8 @@ Retorne um JSON com esta estrutura exata:
   ]
 }
 
-TEXTO DO PROCESSO:
-${textoExtraido}`;
+${blocoCamposDeterministicos(textoIA.campos)}TEXTO DO PROCESSO:
+${textoIA.texto}`;
 
         let dadosExtraidos: any = {};
         try {
@@ -1108,7 +1189,7 @@ ${textoExtraido}`;
           });
           const content = result.choices[0]?.message?.content;
           const textContent = typeof content === "string" ? content : Array.isArray(content) ? content.map((c: any) => c.type === "text" ? c.text : "").join("") : "";
-          dadosExtraidos = JSON.parse(textContent);
+          dadosExtraidos = completarComCamposDeterministicos(JSON.parse(textContent), textoIA.campos);
         } catch (e: any) {
           console.error("AI extraction error:", e);
           throw new Error(e?.message || "O assistente de IA está temporariamente indisponível. Entre em contato com o suporte técnico de TI.");
@@ -1462,7 +1543,7 @@ ${textoExtraido}`;
         }
 
         // 11.5. ANÁLISE PROFUNDA: Gerar estudo completo do processo para o banco de conhecimentos
-        try {
+        if (analiseProfundaHabilitada()) try {
           const analiseProfundaPrompt = `Você é um advogado sênior expert do escritório Castro Sociedade de Advogados.
 Faça uma ANÁLISE PROFUNDA E COMPLETA do processo abaixo. Esta análise será usada como base de conhecimento para gerar petições, estratégias e qualquer ação futura.
 
@@ -1480,7 +1561,7 @@ RETORNE UM JSON com esta estrutura:
 }
 
 TEXTO DO PROCESSO:
-${textoExtraido.substring(0, 45000)}`;
+${textoIA.texto}`;
 
           const analiseResult = await invokeLLM({
             messages: [
@@ -10308,7 +10389,8 @@ async function processarJobImportacaoPdf(jobId: number, inputData: any) {
     }
 
     await updateProgress(20, 'Analisando dados com IA (prompt completo)...');
-    const textoTruncado = textoExtraido.substring(0, 50000);
+    const textoIA = prepararTextoParaIA(textoExtraido.substring(0, 50000));
+    console.log(`[Job] Texto para IA: ${textoIA.tamanhoOriginal} -> ${textoIA.tamanhoFinal} caracteres`);
 
     // Usar o MESMO prompt detalhado do upload individual
     const extractionPrompt = `Você é um assistente jurídico especializado em análise de processos judiciais brasileiros.
@@ -10460,8 +10542,8 @@ ATENÇÃO ESPECIAL PARA MOVIMENTAÇÕES FINANCEIRAS:
 - Identifique pagamentos, restituições, multas e custas processuais
 - Se houver cumprimento de sentença, extraia os valores de execução como movimentações financeiras
 
-TEXTO DO PROCESSO:
-${textoTruncado}`;
+${blocoCamposDeterministicos(textoIA.campos)}TEXTO DO PROCESSO:
+${textoIA.texto}`;
 
     let dadosExtraidos: any = {};
     try {
@@ -10474,7 +10556,7 @@ ${textoTruncado}`;
       });
       const content = result.choices[0]?.message?.content;
       const textContent = typeof content === 'string' ? content : Array.isArray(content) ? content.map((c: any) => c.type === 'text' ? c.text : '').join('') : '';
-      dadosExtraidos = JSON.parse(textContent);
+      dadosExtraidos = completarComCamposDeterministicos(JSON.parse(textContent), textoIA.campos);
     } catch (e) {
       console.error('[Job] AI extraction error:', e);
       dadosExtraidos = { error: 'Falha na extração via IA' };
@@ -10875,7 +10957,7 @@ ${textoTruncado}`;
 
     await updateProgress(88, 'Gerando análise profunda do processo...');
     // 11.5. ANÁLISE PROFUNDA: Gerar estudo completo do processo
-    try {
+    if (analiseProfundaHabilitada()) try {
       const analiseProfundaPromptJob = `Você é um advogado sênior expert do escritório Castro Sociedade de Advogados.
 Faça uma ANÁLISE PROFUNDA E COMPLETA do processo abaixo. Esta análise será usada como base de conhecimento para gerar petições, estratégias e qualquer ação futura.
 
@@ -10893,7 +10975,7 @@ RETORNE UM JSON com esta estrutura:
 }
 
 TEXTO DO PROCESSO:
-${textoExtraido.substring(0, 45000)}`;
+${textoIA.texto}`;
 
       const analiseResultJob = await invokeLLM({
         messages: [
@@ -11589,6 +11671,7 @@ async function gerarConhecimentosLote(processoIds: number[]) {
               { role: 'system', content: 'Você é um assistente jurídico. Extraia a tese principal, fundamentação legal e jurisprudência citada do texto do processo. Retorne JSON com: tesePrincipal, fundamentacaoLegal, jurisprudenciaCitada, pontosFortes, riscosIdentificados.' },
               { role: 'user', content: proc.textoExtraido.substring(0, 8000) },
             ],
+            responseFormat: { type: 'json_object' },
           });
           const content = llmResp.choices[0]?.message?.content;
           const textContent = typeof content === 'string' ? content : '';

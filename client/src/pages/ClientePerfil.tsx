@@ -177,6 +177,10 @@ export default function ClientePerfil() {
       cep: cliente.cep ?? "",
       telefone: cliente.telefone ?? "",
       email: cliente.email ?? "",
+      estadoCivil: (cliente as any).estadoCivil ?? "",
+      dataNascimento: (cliente as any).dataNascimento ?? "",
+      nacionalidade: (cliente as any).nacionalidade ?? "",
+      vinculoFuncional: (cliente as any).vinculoFuncional ?? "",
       observacoes: (cliente as any).observacoes ?? "",
       preferenciaContato: (cliente as any).preferenciaContato ?? "whatsapp",
       filialId: (cliente as any).filialId ?? null,
@@ -467,6 +471,22 @@ export default function ClientePerfil() {
                 <Label>CEP</Label>
                 <Input value={editForm.cep ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, cep: e.target.value }))} />
               </div>
+              <div className="space-y-1">
+                <Label>Estado Civil</Label>
+                <Input value={editForm.estadoCivil ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, estadoCivil: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Data de Nascimento</Label>
+                <Input placeholder="DD/MM/AAAA" maxLength={10} value={editForm.dataNascimento ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, dataNascimento: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Nacionalidade</Label>
+                <Input value={editForm.nacionalidade ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, nacionalidade: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Vínculo Funcional</Label>
+                <Input value={editForm.vinculoFuncional ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, vinculoFuncional: e.target.value }))} />
+              </div>
               <div className="md:col-span-2 space-y-1">
                 <Label>Observações</Label>
                 <Textarea rows={3} value={editForm.observacoes ?? ""} onChange={e => setEditForm((p: any) => ({ ...p, observacoes: e.target.value }))} />
@@ -598,7 +618,7 @@ export default function ClientePerfil() {
         ) : (
           <div className="space-y-4">
             {processosComDetalhes.map((proc: any) => (
-              <ProcessoCard key={proc.id} proc={proc} onDelete={(id: number) => deleteProcesso.mutate({ id })} setLocation={setLocation} clienteId={clienteId} />
+              <ProcessoCard key={proc.id} proc={proc} onDelete={(id: number) => deleteProcesso.mutate({ id })} setLocation={setLocation} clienteId={clienteId} onUpdated={refetch} />
             ))}
           </div>
         )}
@@ -947,8 +967,9 @@ export default function ClientePerfil() {
 }
 
 // ==================== COMPONENTE: CARD DE PROCESSO ====================
-function ProcessoCard({ proc, onDelete, setLocation, clienteId }: { proc: any; onDelete: (id: number) => void; setLocation: (path: string) => void; clienteId: number }) {
+function ProcessoCard({ proc, onDelete, setLocation, clienteId, onUpdated }: { proc: any; onDelete: (id: number) => void; setLocation: (path: string) => void; clienteId: number; onUpdated: () => void }) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
   const statusColors: Record<string, string> = {
     'Ativo': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
     'Encerrado': 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
@@ -958,6 +979,7 @@ function ProcessoCard({ proc, onDelete, setLocation, clienteId }: { proc: any; o
 
   return (
     <div className="border rounded-lg overflow-hidden">
+      {editing && <EditarProcessoDialog proc={proc} onClose={() => setEditing(false)} onSaved={onUpdated} />}
       {/* Header do Processo */}
       <div className="p-4 cursor-pointer hover:bg-accent/30 transition-colors" onClick={() => setExpanded(!expanded)}>
         <div className="flex items-start justify-between">
@@ -992,7 +1014,14 @@ function ProcessoCard({ proc, onDelete, setLocation, clienteId }: { proc: any; o
             <InfoRow label="Assunto" value={proc.assunto} />
             <InfoRow label="Distribuição" value={proc.dataDistribuicao} />
             <InfoRow label="Competência" value={proc.competencia} />
+            <InfoRow label="Juiz" value={proc.juiz} />
+            <InfoRow label="Sentença" value={proc.dataSentenca} />
+            {proc.tipoVinculo && <InfoRow label="Vínculo" value={proc.tipoVinculo} />}
             {proc.valorCondenacao && <InfoRow label="Valor Condenação" value={formatCurrency(proc.valorCondenacao)} />}
+            {proc.restituicao && <InfoRow label="Restituição" value={formatCurrency(proc.restituicao)} />}
+            {proc.danosMorais && <InfoRow label="Danos Morais" value={formatCurrency(proc.danosMorais)} />}
+            {proc.honorariosPerc && <InfoRow label="Honorários" value={`${Number(proc.honorariosPerc)}%`} />}
+            {proc.tutelaStatus && <InfoRow label="Tutela" value={[proc.tutelaTipo, proc.tutelaStatus].filter(Boolean).join(" - ")} />}
             {proc.observacoes && <InfoRow label="Observações" value={proc.observacoes} />}
           </div>
 
@@ -1054,6 +1083,9 @@ function ProcessoCard({ proc, onDelete, setLocation, clienteId }: { proc: any; o
 
           {/* Ações do processo */}
           <div className="flex gap-2 pt-2 border-t">
+            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+              <Edit className="h-4 w-4 mr-1" /> Editar Dados
+            </Button>
             <Button size="sm" variant="outline" onClick={() => setLocation(`/peticionamento?clienteId=${clienteId}&processoId=${proc.id}`)}>
               <FilePlus className="h-4 w-4 mr-1" /> Gerar Petição
             </Button>
@@ -1431,5 +1463,140 @@ function DocumentosSection({ clienteId, documentos, refetch }: { clienteId: numb
         </div>
       )}
     </SectionHeader>
+  );
+}
+
+// ==================== COMPONENTE: EDIÇÃO MANUAL DO PROCESSO ====================
+// Permite revisar e corrigir os dados extraídos automaticamente pela IA
+const FASES = ["Conhecimento", "Cumprimento Provisorio", "Cumprimento Definitivo", "Execucao", "Recurso", "Arquivado", "Suspenso"];
+const STATUS = ["Ativo", "Sentenca Procedente", "Sentenca Improcedente", "Parcialmente Procedente", "Acordo", "Arquivado", "Recurso Pendente"];
+
+// Aceita "52.440,00", "52440,00" ou "52440.00"
+function parseValor(v: string): number | null {
+  const t = v.replace(/[R$\s%]/g, "");
+  if (!t) return null;
+  const n = Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function EditarProcessoDialog({ proc, onClose, onSaved }: { proc: any; onClose: () => void; onSaved: () => void }) {
+  const texto = ["numeroCnj", "tribunal", "comarca", "vara", "tipoAcao", "natureza", "classeProcessual", "assunto", "faseAtual", "statusProcesso",
+    "dataDistribuicao", "dataSentenca", "juiz", "poloAtivo", "poloPassivo", "advogadoAutor", "resumoSentenca",
+    "tutelaTipo", "tutelaStatus", "tutelaDescricao", "tipoVinculo"] as const;
+  const valores = ["valorCausa", "valorCondenacao", "danosMorais", "danosMateriais", "restituicao", "honorariosPerc", "honorariosValor"] as const;
+
+  const inicial = useMemo(() => {
+    const f: Record<string, string> = {};
+    texto.forEach(k => { f[k] = proc[k] ?? ""; });
+    valores.forEach(k => { f[k] = proc[k] != null ? String(Number(proc[k])).replace(".", ",") : ""; });
+    f.processoOrigemCnj = proc.processoOrigemCnj ?? "";
+    return f;
+  }, [proc]);
+  const [form, setForm] = useState<Record<string, string>>(inicial);
+  const set = (k: string) => (e: { target: { value: string } }) => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  const update = trpc.processosRouter.update.useMutation({
+    onSuccess: () => { toast.success("Dados do processo atualizados"); onSaved(); onClose(); },
+    onError: e => toast.error(e.message),
+  });
+
+  const salvar = () => {
+    // Envia só o que mudou, para não sobrescrever campos que a pessoa não revisou
+    const payload: Record<string, any> = { id: proc.id };
+    for (const k of texto) if (form[k] !== inicial[k]) payload[k] = form[k];
+    for (const k of valores) {
+      if (form[k] === inicial[k]) continue;
+      const n = parseValor(form[k]);
+      if (Number.isNaN(n)) { toast.error(`Valor inválido em "${k}"`); return; }
+      payload[k] = n;
+    }
+    if (form.processoOrigemCnj !== inicial.processoOrigemCnj) payload.processoOrigemCnj = form.processoOrigemCnj;
+    if (Object.keys(payload).length === 1) { onClose(); return; }
+    update.mutate(payload as any);
+  };
+
+  const campo = (label: string, k: string, extra?: { placeholder?: string; full?: boolean; area?: boolean }) => (
+    <div className={`space-y-1 ${extra?.full ? "md:col-span-2" : ""}`}>
+      <Label>{label}</Label>
+      {extra?.area
+        ? <Textarea rows={3} value={form[k]} onChange={set(k)} />
+        : <Input value={form[k]} placeholder={extra?.placeholder} onChange={set(k)} />}
+    </div>
+  );
+  const select = (label: string, k: string, opcoes: string[]) => (
+    <div className="space-y-1">
+      <Label>{label}</Label>
+      <Select value={form[k] || undefined} onValueChange={v => setForm(p => ({ ...p, [k]: v }))}>
+        <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+        <SelectContent>
+          {Array.from(new Set([...opcoes, ...(form[k] ? [form[k]] : [])])).map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
+  return (
+    <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Revisar Dados do Processo</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2">Os dados foram extraídos automaticamente pela IA. Confira com o PDF original e corrija o que estiver errado.</p>
+
+        <h5 className="text-xs font-semibold text-muted-foreground uppercase pt-2">Identificação</h5>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {campo("Número CNJ", "numeroCnj", { placeholder: "0000000-00.0000.0.00.0000" })}
+          {campo("Tribunal", "tribunal")}
+          {campo("Comarca", "comarca")}
+          {campo("Vara", "vara")}
+          {campo("Juiz(a)", "juiz")}
+          {campo("Tipo de Ação", "tipoAcao")}
+          {campo("Natureza", "natureza")}
+          {campo("Classe Processual", "classeProcessual")}
+          {campo("Assunto", "assunto", { full: true })}
+        </div>
+
+        <h5 className="text-xs font-semibold text-muted-foreground uppercase pt-2">Situação</h5>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {select("Fase Atual", "faseAtual", FASES)}
+          {select("Status", "statusProcesso", STATUS)}
+          {campo("Data de Distribuição", "dataDistribuicao", { placeholder: "DD/MM/AAAA" })}
+          {campo("Data da Sentença", "dataSentenca", { placeholder: "DD/MM/AAAA" })}
+          {campo("Processo de Origem (nº CNJ)", "processoOrigemCnj", { placeholder: "Se for cumprimento, recurso etc." })}
+          {campo("Tipo de Vínculo", "tipoVinculo", { placeholder: "Ex.: Cumprimento Definitivo" })}
+        </div>
+
+        <h5 className="text-xs font-semibold text-muted-foreground uppercase pt-2">Partes</h5>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {campo("Polo Ativo", "poloAtivo")}
+          {campo("Polo Passivo", "poloPassivo")}
+          {campo("Advogado do Autor", "advogadoAutor")}
+        </div>
+
+        <h5 className="text-xs font-semibold text-muted-foreground uppercase pt-2">Valores (R$)</h5>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {campo("Valor da Causa", "valorCausa", { placeholder: "0,00" })}
+          {campo("Valor da Condenação", "valorCondenacao", { placeholder: "0,00" })}
+          {campo("Restituição", "restituicao", { placeholder: "0,00" })}
+          {campo("Danos Morais", "danosMorais", { placeholder: "0,00" })}
+          {campo("Danos Materiais", "danosMateriais", { placeholder: "0,00" })}
+          {campo("Honorários (%)", "honorariosPerc", { placeholder: "Ex.: 15" })}
+          {campo("Honorários (R$)", "honorariosValor", { placeholder: "0,00" })}
+        </div>
+
+        <h5 className="text-xs font-semibold text-muted-foreground uppercase pt-2">Sentença e Tutela</h5>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {campo("Tipo de Tutela", "tutelaTipo")}
+          {campo("Status da Tutela", "tutelaStatus", { placeholder: "Ex.: Deferida" })}
+          {campo("Descrição da Tutela", "tutelaDescricao", { full: true, area: true })}
+          {campo("Resumo da Sentença", "resumoSentenca", { full: true, area: true })}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={salvar} disabled={update.isPending}>{update.isPending ? "Salvando..." : "Salvar Alterações"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -218,7 +218,9 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const useGeminiNative = () => !!ENV.geminiApiKey;
+const useOllama = () => ENV.llmProvider === "ollama";
+
+const useGeminiNative = () => !useOllama() && !!ENV.geminiApiKey;
 
 const resolveApiUrl = () => {
   if (useGeminiNative()) {
@@ -282,7 +284,125 @@ const normalizeResponseFormat = ({
   };
 };
 
+// Ollama via API nativa (/api/chat): permite definir num_ctx — o endpoint compatível com OpenAI
+// usa o contexto padrão (pequeno) e cortaria o texto do processo sem avisar
+const ollamaContentToText = (content: MessageContent | MessageContent[]) =>
+  ensureArray(content)
+    .map(part => {
+      if (typeof part === "string") return part;
+      if (part.type === "text") return part.text;
+      if (part.type === "file_url") {
+        throw new Error("O modelo local (Ollama) não lê arquivos anexados; envie o texto extraído do documento.");
+      }
+      return "";
+    })
+    .join("\n");
+
+async function invokeOllama(params: InvokeParams): Promise<InvokeResult> {
+  const model = ENV.llmModel || "qwen2.5:3b";
+  const messages = params.messages.map(m => {
+    const msg: Record<string, unknown> = {
+      role: m.role === "function" ? "tool" : m.role,
+      content: ollamaContentToText(m.content),
+    };
+    const toolCalls = (m as any).tool_calls as ToolCall[] | undefined;
+    if (toolCalls?.length) {
+      msg.tool_calls = toolCalls.map(tc => {
+        let args: unknown = tc.function.arguments;
+        try { args = JSON.parse(tc.function.arguments); } catch {}
+        return { function: { name: tc.function.name, arguments: args } };
+      });
+    }
+    return msg;
+  });
+
+  const format = normalizeResponseFormat(params);
+  // Na CPU a geração sai a ~5-9 tokens/s: limita o tamanho para não passar do timeout da tela.
+  // Respostas JSON (extração de PDF) precisam de mais espaço para não sair cortadas.
+  const maxTokens = params.maxTokens ?? params.max_tokens ?? (Number(process.env.OLLAMA_MAX_TOKENS) || (format ? 3072 : 1024));
+  const payload: Record<string, unknown> = {
+    model,
+    messages,
+    stream: true,
+    options: {
+      num_ctx: ENV.ollamaNumCtx,
+      num_predict: maxTokens,
+      temperature: 0.1,
+      repeat_penalty: 1.15, // modelos pequenos tendem a entrar em loop repetindo trechos
+    },
+  };
+  if (format?.type === "json_object") payload.format = "json";
+  if (format?.type === "json_schema") payload.format = format.json_schema.schema;
+  if (params.tools?.length) payload.tools = params.tools;
+
+  // stream=true: sem isso o fetch do Node aborta após 5 min esperando o cabeçalho da resposta
+  const response = await fetch(`${ENV.ollamaUrl.replace(/\/$/, "")}/api/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`Ollama invoke failed: ${response.status} ${response.statusText} – ${await response.text()}`);
+  }
+
+  let content = "";
+  let toolCalls: ToolCall[] = [];
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let doneReason: string | null = null;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const handleLine = (line: string) => {
+    if (!line.trim()) return;
+    const chunk = JSON.parse(line);
+    if (chunk.error) throw new Error(`Ollama: ${chunk.error}`);
+    content += chunk.message?.content ?? "";
+    if (chunk.message?.tool_calls?.length) {
+      toolCalls = toolCalls.concat(
+        chunk.message.tool_calls.map((tc: any, i: number) => ({
+          id: `call_${Date.now()}_${toolCalls.length + i}`,
+          type: "function" as const,
+          function: {
+            name: tc.function.name,
+            arguments: typeof tc.function.arguments === "string" ? tc.function.arguments : JSON.stringify(tc.function.arguments ?? {}),
+          },
+        }))
+      );
+    }
+    if (chunk.done) {
+      promptTokens = chunk.prompt_eval_count ?? 0;
+      completionTokens = chunk.eval_count ?? 0;
+      doneReason = chunk.done_reason ?? "stop";
+    }
+  };
+  for await (const part of response.body as any as AsyncIterable<Uint8Array>) {
+    buffer += decoder.decode(part, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    lines.forEach(handleLine);
+  }
+  handleLine(buffer);
+
+  if (promptTokens >= ENV.ollamaNumCtx) {
+    console.warn(`[Ollama] Prompt (${promptTokens} tokens) atingiu o limite de contexto (${ENV.ollamaNumCtx}); o texto pode ter sido cortado.`);
+  }
+
+  return {
+    id: `ollama-${Date.now()}`,
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [{
+      index: 0,
+      message: { role: "assistant", content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) },
+      finish_reason: toolCalls.length ? "tool_calls" : doneReason,
+    }],
+    usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens },
+  };
+}
+
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
+  if (useOllama()) return invokeOllama(params);
+
   assertApiKey();
 
   const {
@@ -297,7 +417,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: ENV.llmModel || "gemini-2.5-flash",
     messages: messages.map(normalizeMessage),
   };
 
