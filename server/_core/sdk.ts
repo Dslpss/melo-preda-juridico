@@ -195,6 +195,22 @@ class SDKServer {
   }
 
   async authenticateRequest(req: Request): Promise<User> {
+    // Dev-only: skip Manus OAuth and log in as a local admin user
+    if (!ENV.isProduction && process.env.NODE_ENV === "development" && process.env.DEV_AUTH_BYPASS === "1") {
+      const openId = "dev-user";
+      await db.upsertUser({
+        openId,
+        name: "Dev Local",
+        email: "dev@localhost",
+        loginMethod: "dev",
+        role: "admin",
+        lastSignedIn: new Date(),
+      });
+      const devUser = await db.getUserByOpenId(openId);
+      if (!devUser) throw ForbiddenError("Dev user not available (database down?)");
+      return devUser;
+    }
+
     const sessionCookie = parseCookieHeader(req.headers.cookie ?? "")[COOKIE_NAME];
     const session = await this.verifySession(sessionCookie);
 
